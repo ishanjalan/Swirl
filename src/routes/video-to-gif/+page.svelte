@@ -25,7 +25,6 @@
 	let quality = $state(80);
 	let startTime = $state(0);
 	let endTime = $state(0);
-	let outputFormat = $state<'gif' | 'webp' | 'apng'>('gif');
 
 	// Processing
 	let isProcessing = $state(false);
@@ -135,66 +134,37 @@
 
 			progressStage = 'Encoding GIF...';
 
-			if (outputFormat === 'gif') {
-				// Create GIF encoder
-				const gif = GIFEncoder();
+			// Create GIF encoder
+			const gif = GIFEncoder();
+			
+			// Encode frames
+			for (let i = 0; i < frames.length; i++) {
+				const imageData = frames[i];
 				
-				// Encode frames
-				for (let i = 0; i < frames.length; i++) {
-					const imageData = frames[i];
-					
-					// Quantize based on quality (higher quality = more colors)
-					const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
-					const palette = quantize(imageData.data, maxColors);
-					const index = applyPalette(imageData.data, palette);
-					
-					gif.writeFrame(index, imageData.width, imageData.height, { 
-						palette, 
-						delay: Math.round(frameDelay)
-					});
-					
-					progress = 60 + Math.round(((i + 1) / frames.length) * 35); // 60-95%
-					progressStage = `Encoding frame ${i + 1}/${frames.length}`;
-				}
+				// Quantize based on quality (higher quality = more colors)
+				const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
+				const palette = quantize(imageData.data, maxColors);
+				const index = applyPalette(imageData.data, palette);
 				
-				gif.finish();
+				gif.writeFrame(index, imageData.width, imageData.height, { 
+					palette, 
+					delay: Math.round(frameDelay)
+				});
 				
-				progressStage = 'Finalizing...';
-				progress = 98;
-				
-				// Create blob and URL
-				const bytes = gif.bytes();
-				const blob = new Blob([bytes], { type: 'image/gif' });
-				resultUrl = URL.createObjectURL(blob);
-				resultSize = blob.size;
-				
-			} else {
-				// WebP and APNG fallback to GIF for now
-				const gif = GIFEncoder();
-				
-				for (let i = 0; i < frames.length; i++) {
-					const imageData = frames[i];
-					const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
-					const palette = quantize(imageData.data, maxColors);
-					const index = applyPalette(imageData.data, palette);
-					
-					gif.writeFrame(index, imageData.width, imageData.height, { 
-						palette, 
-						delay: Math.round(frameDelay)
-					});
-					
-					progress = 60 + Math.round(((i + 1) / frames.length) * 35);
-				}
-				
-				gif.finish();
-				
-				const bytes = gif.bytes();
-				const blob = new Blob([bytes], { type: 'image/gif' });
-				resultUrl = URL.createObjectURL(blob);
-				resultSize = blob.size;
-				
-				toast.info(`Note: Exported as GIF. Native ${outputFormat.toUpperCase()} encoding coming soon!`);
+				progress = 60 + Math.round(((i + 1) / frames.length) * 35); // 60-95%
+				progressStage = `Encoding frame ${i + 1}/${frames.length}`;
 			}
+			
+			gif.finish();
+			
+			progressStage = 'Finalizing...';
+			progress = 98;
+			
+			// Create blob and URL
+			const bytes = gif.bytes();
+			const blob = new Blob([bytes], { type: 'image/gif' });
+			resultUrl = URL.createObjectURL(blob);
+			resultSize = blob.size;
 			
 			progress = 100;
 			progressStage = 'Complete!';
@@ -268,7 +238,7 @@
 					Convert video to <span class="gradient-text">animated GIF</span>
 				</h1>
 				<p class="mt-2 text-surface-500">
-					Upload MP4, WebM, or MOV and convert to GIF, WebP, or APNG
+					Upload MP4, WebM, or MOV and convert to animated GIF
 				</p>
 			</div>
 
@@ -376,23 +346,6 @@
 						</h3>
 
 						<div class="space-y-5">
-							<!-- Output Format -->
-							<div>
-								<label class="block text-sm font-medium text-surface-300 mb-2">Output Format</label>
-								<div class="flex gap-2">
-									{#each ['gif', 'webp', 'apng'] as format}
-										<button
-											onclick={() => outputFormat = format as typeof outputFormat}
-											class="flex-1 rounded-xl px-4 py-2.5 text-sm font-medium transition-all {outputFormat === format
-												? 'bg-gradient-to-r from-accent-start to-accent-end text-white'
-												: 'bg-surface-800 text-surface-400 hover:text-surface-200'}"
-										>
-											{format.toUpperCase()}
-										</button>
-									{/each}
-								</div>
-							</div>
-
 							<!-- FPS -->
 							<div>
 								<label class="block text-sm font-medium text-surface-300 mb-2">

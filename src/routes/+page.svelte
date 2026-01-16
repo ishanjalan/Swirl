@@ -11,7 +11,6 @@
 		Shield, 
 		Sparkles,
 		ArrowRight,
-		PlayCircle,
 		Rewind,
 		Images,
 		Merge
@@ -23,7 +22,7 @@
 			id: 'video-to-gif',
 			href: '/video-to-gif',
 			title: 'Video to GIF',
-			description: 'Convert MP4, WebM, MOV to animated GIF, WebP, or APNG',
+			description: 'Convert MP4, WebM, or MOV videos to animated GIF',
 			icon: Film,
 			gradient: 'from-pink-500 to-rose-500',
 			popular: true
@@ -58,8 +57,8 @@
 		{
 			id: 'resize',
 			href: '/resize',
-			title: 'Resize & Crop',
-			description: 'Change dimensions with visual crop tool and aspect presets',
+			title: 'Resize',
+			description: 'Change dimensions with presets for Discord, social media, and more',
 			icon: Maximize2,
 			gradient: 'from-blue-500 to-cyan-500',
 			popular: false
@@ -77,7 +76,7 @@
 			id: 'split',
 			href: '/split',
 			title: 'Split Frames',
-			description: 'Extract individual frames as PNG images with ZIP download',
+			description: 'Extract individual frames as PNG images (coming soon)',
 			icon: Layers,
 			gradient: 'from-emerald-500 to-teal-500',
 			popular: false
@@ -97,13 +96,13 @@
 		},
 		{
 			icon: Sparkles,
-			title: 'Modern Formats',
-			description: 'GIF, WebP, APNG, and AVIF output support'
+			title: 'Powerful Tools',
+			description: 'Optimize, resize, combine, and create GIFs with ease'
 		}
 	];
 
 	const presets = [
-		{ name: 'Discord', size: '8MB', icon: '💬' },
+		{ name: 'Discord', size: '10MB', icon: '💬' },
 		{ name: 'Twitter', size: '15MB', icon: '𝕏' },
 		{ name: 'Slack', size: '1MB', icon: '💼' },
 		{ name: 'WhatsApp', size: '16MB', icon: '📱' }
@@ -214,25 +213,25 @@
 				{/each}
 			</div>
 
-			<!-- Output formats -->
+			<!-- Input formats -->
 			<div class="glass rounded-2xl p-6 text-center" in:fade={{ delay: 600, duration: 300 }}>
-				<h3 class="text-lg font-semibold text-surface-100 mb-4">Output Formats</h3>
+				<h3 class="text-lg font-semibold text-surface-100 mb-4">Supported Input Formats</h3>
 				<div class="flex flex-wrap items-center justify-center gap-3">
 					<span class="rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
 						GIF
 					</span>
+					<span class="rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
+						MP4
+					</span>
 					<span class="rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						WebP
+						WebM
 					</span>
-					<span class="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						APNG
-					</span>
-					<span class="rounded-lg bg-gradient-to-r from-purple-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						AVIF
+					<span class="rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
+						PNG/JPG
 					</span>
 				</div>
 				<p class="mt-4 text-sm text-surface-500">
-					Choose the best format for your use case — GIF for compatibility, WebP for smaller files, APNG for quality
+					Convert videos to GIF, combine images into animations, or optimize existing GIFs
 				</p>
 			</div>
 		</div>

@@ -237,7 +237,7 @@
 			<div class="text-center mb-8" in:fade={{ duration: 200 }}>
 				<div class="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-4 py-1.5 text-sm font-medium text-cyan-400 mb-4">
 					<Scaling class="h-4 w-4" />
-					Resize & Crop
+					Resize GIF
 				</div>
 				<h1 class="text-3xl font-bold text-surface-100">
 					Resize GIFs to <span class="gradient-text">any dimension</span>

@@ -27,7 +27,7 @@
 
 	// Size presets
 	const sizePresets = [
-		{ id: 'discord', label: 'Discord', size: 8, icon: '💬' },
+		{ id: 'discord', label: 'Discord', size: 10, icon: '💬' },
 		{ id: 'discord-nitro', label: 'Discord Nitro', size: 50, icon: '✨' },
 		{ id: 'twitter', label: 'Twitter/X', size: 15, icon: '𝕏' },
 		{ id: 'slack', label: 'Slack', size: 1, icon: '💼' },
@@ -36,7 +36,7 @@
 	];
 
 	let selectedPreset = $state<string | null>('discord');
-	let targetSizeMB = $state(8);
+	let targetSizeMB = $state(10);
 	let colorReduction = $state(256);
 	let lossy = $state(80);
 
