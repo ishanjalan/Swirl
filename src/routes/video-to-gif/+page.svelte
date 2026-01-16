@@ -8,6 +8,7 @@
 	import { fade, fly } from 'svelte/transition';
 	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 	import { extractFramesFromVideo, checkBrowserSupport, getVideoMetadata } from '$lib/utils/webcodecs';
+	import { formatBytes } from '$lib/utils/gif-parser';
 
 	// State
 	let videoFile = $state<File | null>(null);
@@ -184,14 +185,6 @@
 		const mins = Math.floor(seconds / 60);
 		const secs = Math.floor(seconds % 60);
 		return `${mins}:${secs.toString().padStart(2, '0')}`;
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
 	function clearVideo() {

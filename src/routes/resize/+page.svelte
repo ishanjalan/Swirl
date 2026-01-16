@@ -7,7 +7,7 @@
 	import { Scaling, Settings, Download, Trash2, Eye, Loader2, Lock, Unlock, Clock, Film } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { processGif, initPool } from '$lib/utils/worker-pool';
-	import { parseGifFile, formatDuration, type GifMetadata } from '$lib/utils/gif-parser';
+	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
 
 	interface GifFile {
 		id: string;
@@ -111,14 +111,6 @@
 				targetHeight = preset.height;
 			}
 		}
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
 	async function handleResize() {

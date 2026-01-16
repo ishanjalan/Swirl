@@ -7,6 +7,7 @@
 	import { fade, fly, slide } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
+	import { formatBytes } from '$lib/utils/gif-parser';
 
 	interface Frame {
 		id: string;
@@ -275,14 +276,6 @@
 		a.href = resultUrl;
 		a.download = `swirl-animation-${Date.now()}.gif`;
 		a.click();
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
 	function clearAll() {

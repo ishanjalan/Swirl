@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X } from 'lucide-svelte';
 	import { scale, fade } from 'svelte/transition';
+	import { formatBytes } from '$lib/utils/gif-parser';
 
 	let {
 		originalUrl,
@@ -21,14 +22,6 @@
 	let containerRef: HTMLDivElement;
 
 	const savings = $derived(originalSize > 0 ? Math.round((1 - compressedSize / originalSize) * 100) : 0);
-
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-	}
 
 	function getPositionFromEvent(clientX: number): number {
 		if (!containerRef) return sliderPosition;

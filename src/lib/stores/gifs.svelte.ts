@@ -44,7 +44,7 @@ export interface GifSettings {
 }
 
 const defaultSettings: GifSettings = {
-	targetSizeMB: 8,
+	targetSizeMB: 10,
 	colors: 256,
 	lossy: 80,
 	width: 480,
