@@ -2,10 +2,12 @@
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
+	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Film, Settings, Download, Play, Pause, RotateCcw } from 'lucide-svelte';
+	import { Film, Settings, Download, Play, Pause, RotateCcw, Eye } from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
+	import { extractFramesFromVideo, checkBrowserSupport, getVideoMetadata } from '$lib/utils/webcodecs';
 
 	// State
 	let videoFile = $state<File | null>(null);
@@ -14,6 +16,8 @@
 	let isPlaying = $state(false);
 	let duration = $state(0);
 	let currentTime = $state(0);
+	let videoWidth = $state(0);
+	let videoHeight = $state(0);
 
 	// Settings
 	let fps = $state(15);
@@ -26,8 +30,13 @@
 	// Processing
 	let isProcessing = $state(false);
 	let progress = $state(0);
+	let progressStage = $state('');
 	let resultUrl = $state<string | null>(null);
 	let resultSize = $state(0);
+	let processingTime = $state(0);
+
+	// Comparison modal
+	let showComparison = $state(false);
 
 	function handleFiles(files: File[]) {
 		const videoFiles = files.filter(f => f.type.startsWith('video/'));
@@ -47,10 +56,18 @@
 		toast.success(`Loaded: ${videoFile.name}`);
 	}
 
-	function handleVideoLoaded() {
+	async function handleVideoLoaded() {
 		if (videoElement) {
 			duration = videoElement.duration;
+			videoWidth = videoElement.videoWidth;
+			videoHeight = videoElement.videoHeight;
 			endTime = Math.min(duration, 10); // Default to first 10 seconds
+			
+			// Auto-set width based on video aspect ratio
+			const aspectRatio = videoHeight / videoWidth;
+			if (videoWidth < 480) {
+				width = videoWidth;
+			}
 		}
 	}
 
@@ -70,42 +87,13 @@
 		}
 	}
 
-	function seekTo(time: number) {
-		if (videoElement) {
-			videoElement.currentTime = time;
-			currentTime = time;
-		}
-	}
-
-	async function extractFrameAtTime(video: HTMLVideoElement, time: number, targetWidth: number): Promise<ImageData> {
-		return new Promise((resolve, reject) => {
-			const canvas = document.createElement('canvas');
-			const ctx = canvas.getContext('2d')!;
-			
-			// Calculate dimensions maintaining aspect ratio
-			const aspectRatio = video.videoHeight / video.videoWidth;
-			const targetHeight = Math.round(targetWidth * aspectRatio);
-			
-			canvas.width = targetWidth;
-			canvas.height = targetHeight;
-			
-			const onSeeked = () => {
-				video.removeEventListener('seeked', onSeeked);
-				ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-				const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
-				resolve(imageData);
-			};
-			
-			video.addEventListener('seeked', onSeeked);
-			video.currentTime = time;
-		});
-	}
-
 	async function handleConvert() {
 		if (!videoFile || !videoElement) return;
 		
 		isProcessing = true;
 		progress = 0;
+		progressStage = 'Initializing...';
+		const startProcessTime = performance.now();
 		
 		// Clean up previous result
 		if (resultUrl) {
@@ -113,45 +101,66 @@
 			resultUrl = null;
 		}
 		
-		toast.info('Extracting frames...');
-		
 		try {
 			// Pause video during processing
 			videoElement.pause();
 			isPlaying = false;
 			
 			// Calculate dimensions
-			const aspectRatio = videoElement.videoHeight / videoElement.videoWidth;
+			const aspectRatio = videoHeight / videoWidth;
 			const targetHeight = Math.round(width * aspectRatio);
 			
 			// Calculate frame times
 			const clipDuration = endTime - startTime;
-			const frameDelay = 1000 / fps; // milliseconds per frame
+			const frameDelay = 1000 / fps;
 			const totalFrames = Math.floor(clipDuration * fps);
 			
+			progressStage = 'Extracting frames...';
+			
+			// Extract frames using WebCodecs-enhanced extraction
+			const frames = await extractFramesFromVideo(
+				videoFile,
+				{
+					startTime,
+					endTime,
+					fps,
+					width,
+					height: targetHeight
+				},
+				(frameProgress) => {
+					progress = Math.round(frameProgress.progress * 0.6); // 0-60% for extraction
+					progressStage = `Extracting frame ${frameProgress.currentFrame}/${frameProgress.totalFrames}`;
+				}
+			);
+
+			progressStage = 'Encoding GIF...';
+
 			if (outputFormat === 'gif') {
 				// Create GIF encoder
 				const gif = GIFEncoder();
 				
-				// Extract and encode frames
-				for (let i = 0; i < totalFrames; i++) {
-					const frameTime = startTime + (i / fps);
-					const imageData = await extractFrameAtTime(videoElement, frameTime, width);
+				// Encode frames
+				for (let i = 0; i < frames.length; i++) {
+					const imageData = frames[i];
 					
 					// Quantize based on quality (higher quality = more colors)
 					const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
 					const palette = quantize(imageData.data, maxColors);
 					const index = applyPalette(imageData.data, palette);
 					
-					gif.writeFrame(index, width, targetHeight, { 
+					gif.writeFrame(index, imageData.width, imageData.height, { 
 						palette, 
 						delay: Math.round(frameDelay)
 					});
 					
-					progress = Math.round(((i + 1) / totalFrames) * 100);
+					progress = 60 + Math.round(((i + 1) / frames.length) * 35); // 60-95%
+					progressStage = `Encoding frame ${i + 1}/${frames.length}`;
 				}
 				
 				gif.finish();
+				
+				progressStage = 'Finalizing...';
+				progress = 98;
 				
 				// Create blob and URL
 				const bytes = gif.bytes();
@@ -159,27 +168,22 @@
 				resultUrl = URL.createObjectURL(blob);
 				resultSize = blob.size;
 				
-			} else if (outputFormat === 'webp' || outputFormat === 'apng') {
-				// For WebP and APNG, we'll create an animated version using canvas frames
-				// This is a simplified approach - encode as GIF for now with a note
-				// Full WebP/APNG support would require additional libraries
-				
+			} else {
+				// WebP and APNG fallback to GIF for now
 				const gif = GIFEncoder();
 				
-				for (let i = 0; i < totalFrames; i++) {
-					const frameTime = startTime + (i / fps);
-					const imageData = await extractFrameAtTime(videoElement, frameTime, width);
-					
+				for (let i = 0; i < frames.length; i++) {
+					const imageData = frames[i];
 					const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
 					const palette = quantize(imageData.data, maxColors);
 					const index = applyPalette(imageData.data, palette);
 					
-					gif.writeFrame(index, width, targetHeight, { 
+					gif.writeFrame(index, imageData.width, imageData.height, { 
 						palette, 
 						delay: Math.round(frameDelay)
 					});
 					
-					progress = Math.round(((i + 1) / totalFrames) * 100);
+					progress = 60 + Math.round(((i + 1) / frames.length) * 35);
 				}
 				
 				gif.finish();
@@ -189,10 +193,14 @@
 				resultUrl = URL.createObjectURL(blob);
 				resultSize = blob.size;
 				
-				toast.info(`Note: Converted to GIF. Native ${outputFormat.toUpperCase()} encoding coming soon!`);
+				toast.info(`Note: Exported as GIF. Native ${outputFormat.toUpperCase()} encoding coming soon!`);
 			}
 			
-			toast.success('Conversion complete!');
+			progress = 100;
+			progressStage = 'Complete!';
+			processingTime = Math.round((performance.now() - startProcessTime) / 1000);
+			
+			toast.success(`Conversion complete in ${processingTime}s!`);
 			
 		} catch (error) {
 			console.error('Conversion error:', error);
@@ -224,6 +232,14 @@
 		resultUrl = null;
 		startTime = 0;
 		endTime = 0;
+	}
+
+	function downloadResult() {
+		if (!resultUrl || !videoFile) return;
+		const a = document.createElement('a');
+		a.href = resultUrl;
+		a.download = videoFile.name.replace(/\.[^/.]+$/, '') + `.${outputFormat}`;
+		a.click();
 	}
 </script>
 
@@ -271,6 +287,7 @@
 					<!-- Preview -->
 					<div class="glass rounded-2xl p-4">
 						<div class="aspect-video bg-surface-900 rounded-xl overflow-hidden relative">
+							<!-- svelte-ignore a11y_media_has_caption -->
 							<video
 								bind:this={videoElement}
 								src={videoUrl}
@@ -439,7 +456,7 @@
 							>
 								{#if isProcessing}
 									<div class="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-									Converting... {progress}%
+									{progressStage} ({progress}%)
 								{:else}
 									<Film class="h-5 w-5" />
 									Convert to {outputFormat.toUpperCase()}
@@ -448,30 +465,48 @@
 
 							<!-- Progress -->
 							{#if isProcessing}
-								<div class="h-2 bg-surface-800 rounded-full overflow-hidden">
-									<div 
-										class="h-full bg-gradient-to-r from-accent-start to-accent-end transition-all duration-300"
-										style="width: {progress}%"
-									></div>
+								<div class="space-y-2">
+									<div class="h-2 bg-surface-800 rounded-full overflow-hidden">
+										<div 
+											class="h-full bg-gradient-to-r from-accent-start to-accent-end transition-all duration-300"
+											style="width: {progress}%"
+										></div>
+									</div>
 								</div>
 							{/if}
 
 							<!-- Result -->
 							{#if resultUrl}
-								<div class="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/30">
-									<div class="flex items-center justify-between">
+								<div class="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/30" in:fly={{ y: 10, duration: 200 }}>
+									<div class="flex items-center justify-between mb-3">
 										<div>
 											<p class="text-green-400 font-medium">Conversion complete!</p>
-											<p class="text-sm text-surface-500">Size: {formatBytes(resultSize)}</p>
+											<p class="text-sm text-surface-500">
+												Size: {formatBytes(resultSize)} • Time: {processingTime}s
+											</p>
 										</div>
-										<a
-											href={resultUrl}
-											download="converted.{outputFormat}"
-											class="flex items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition-colors"
+									</div>
+									
+									<!-- Preview -->
+									<div class="mb-3 rounded-lg overflow-hidden bg-surface-900">
+										<img src={resultUrl} alt="Result" class="w-full h-auto max-h-40 object-contain" />
+									</div>
+									
+									<div class="flex gap-2">
+										<button
+											onclick={downloadResult}
+											class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-600 transition-colors"
 										>
 											<Download class="h-4 w-4" />
 											Download
-										</a>
+										</button>
+										<button
+											onclick={() => showComparison = true}
+											class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+										>
+											<Eye class="h-4 w-4" />
+											Compare
+										</button>
 									</div>
 								</div>
 							{/if}
@@ -484,3 +519,14 @@
 
 	<Footer />
 </div>
+
+<!-- Comparison Modal -->
+{#if showComparison && videoUrl && resultUrl}
+	<CompareSlider
+		originalUrl={videoUrl}
+		compressedUrl={resultUrl}
+		originalSize={videoFile?.size || 0}
+		compressedSize={resultSize}
+		onclose={() => showComparison = false}
+	/>
+{/if}

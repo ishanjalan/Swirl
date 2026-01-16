@@ -2,72 +2,208 @@
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
+	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Maximize2, Lock, Unlock, Download } from 'lucide-svelte';
-	import { fade, fly } from 'svelte/transition';
+	import { Scaling, Settings, Download, Trash2, Eye, Loader2, Lock, Unlock } from 'lucide-svelte';
+	import { fade, fly, slide } from 'svelte/transition';
+	import { processGif, initPool } from '$lib/utils/worker-pool';
 
-	let file = $state<File | null>(null);
-	let previewUrl = $state<string | null>(null);
+	interface GifFile {
+		id: string;
+		file: File;
+		originalUrl: string;
+		width?: number;
+		height?: number;
+		status: 'pending' | 'processing' | 'completed' | 'error';
+		progress: number;
+		error?: string;
+		compressedUrl?: string;
+		compressedBlob?: Blob;
+		compressedSize?: number;
+	}
+
+	let files = $state<GifFile[]>([]);
 	let isProcessing = $state(false);
 
-	let width = $state(480);
-	let height = $state(270);
-	let maintainAspect = $state(true);
-	let aspectRatio = $state(16/9);
-
-	const aspectPresets = [
-		{ label: '1:1', value: 1, desc: 'Square' },
-		{ label: '16:9', value: 16/9, desc: 'Widescreen' },
-		{ label: '9:16', value: 9/16, desc: 'Portrait' },
-		{ label: '4:3', value: 4/3, desc: 'Classic' }
-	];
-
+	// Size presets
 	const sizePresets = [
-		{ label: '240p', width: 426, height: 240 },
-		{ label: '360p', width: 640, height: 360 },
-		{ label: '480p', width: 854, height: 480 },
-		{ label: '720p', width: 1280, height: 720 }
+		{ id: 'discord-emoji', label: 'Discord Emoji', width: 128, height: 128, icon: '😀' },
+		{ id: 'discord-sticker', label: 'Discord Sticker', width: 320, height: 320, icon: '🏷️' },
+		{ id: 'thumbnail', label: 'Thumbnail', width: 150, height: 150, icon: '🖼️' },
+		{ id: 'social', label: 'Social Media', width: 480, height: 480, icon: '📱' },
+		{ id: 'hd', label: 'HD', width: 720, height: 720, icon: '🎬' },
+		{ id: 'custom', label: 'Custom', width: 0, height: 0, icon: '✏️' }
 	];
 
-	function handleFiles(files: File[]) {
-		const gifFile = files.find(f => f.type === 'image/gif' || f.name.endsWith('.gif'));
-		if (!gifFile) {
-			toast.error('Please select a GIF file');
+	let selectedPreset = $state<string>('social');
+	let targetWidth = $state(480);
+	let targetHeight = $state(480);
+	let maintainAspectRatio = $state(true);
+	let optimizeAfterResize = $state(true);
+	let colors = $state(256);
+
+	// Comparison modal
+	let showComparison = $state(false);
+	let comparisonFile = $state<GifFile | null>(null);
+
+	function generateId(): string {
+		return `gif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+	}
+
+	function handleFiles(newFiles: File[]) {
+		const gifFiles = newFiles.filter(f => f.type === 'image/gif' || f.name.endsWith('.gif'));
+		if (gifFiles.length === 0) {
+			toast.error('Please select GIF files');
 			return;
 		}
-		file = gifFile;
-		if (previewUrl) URL.revokeObjectURL(previewUrl);
-		previewUrl = URL.createObjectURL(gifFile);
-		toast.success(`Loaded: ${gifFile.name}`);
+		
+		const newGifFiles: GifFile[] = gifFiles.map(file => {
+			const gifFile: GifFile = {
+				id: generateId(),
+				file,
+				originalUrl: URL.createObjectURL(file),
+				status: 'pending',
+				progress: 0
+			};
+			
+			// Get dimensions from image
+			const img = new Image();
+			img.onload = () => {
+				files = files.map(f => f.id === gifFile.id ? { ...f, width: img.naturalWidth, height: img.naturalHeight } : f);
+			};
+			img.src = gifFile.originalUrl;
+			
+			return gifFile;
+		});
+		
+		files = [...files, ...newGifFiles];
+		toast.success(`Added ${gifFiles.length} GIF(s)`);
 	}
 
-	function updateWidth(newWidth: number) {
-		width = newWidth;
-		if (maintainAspect) {
-			height = Math.round(newWidth / aspectRatio);
+	function removeFile(id: string) {
+		const file = files.find(f => f.id === id);
+		if (file) {
+			URL.revokeObjectURL(file.originalUrl);
+			if (file.compressedUrl) URL.revokeObjectURL(file.compressedUrl);
+		}
+		files = files.filter(f => f.id !== id);
+	}
+
+	function selectPreset(presetId: string) {
+		const preset = sizePresets.find(p => p.id === presetId);
+		if (preset) {
+			selectedPreset = presetId;
+			if (preset.width > 0) {
+				targetWidth = preset.width;
+				targetHeight = preset.height;
+			}
 		}
 	}
 
-	function updateHeight(newHeight: number) {
-		height = newHeight;
-		if (maintainAspect) {
-			width = Math.round(newHeight * aspectRatio);
-		}
-	}
-
-	function applyPreset(preset: typeof sizePresets[0]) {
-		width = preset.width;
-		height = preset.height;
-		aspectRatio = preset.width / preset.height;
+	function formatBytes(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
 	async function handleResize() {
-		if (!file) return;
+		if (files.length === 0) return;
+		
 		isProcessing = true;
-		toast.info('Resize coming soon!');
-		await new Promise(r => setTimeout(r, 1000));
+		
+		// Initialize worker pool
+		await initPool();
+		
+		const pendingFiles = files.filter(f => f.status === 'pending' || f.status === 'error');
+		
+		for (const gifFile of pendingFiles) {
+			// Update status to processing
+			files = files.map(f => f.id === gifFile.id ? { ...f, status: 'processing' as const, progress: 0 } : f);
+			
+			try {
+				const buffer = await gifFile.file.arrayBuffer();
+				
+				// Calculate target dimensions maintaining aspect ratio if needed
+				let finalWidth = targetWidth;
+				let finalHeight = targetHeight;
+				
+				if (maintainAspectRatio && gifFile.width && gifFile.height) {
+					const aspectRatio = gifFile.width / gifFile.height;
+					if (targetWidth && !targetHeight) {
+						finalHeight = Math.round(targetWidth / aspectRatio);
+					} else if (targetHeight && !targetWidth) {
+						finalWidth = Math.round(targetHeight * aspectRatio);
+					} else {
+						// Both specified, use width as primary
+						finalHeight = Math.round(targetWidth / aspectRatio);
+					}
+				}
+				
+				const { result, stats } = await processGif(
+					gifFile.id,
+					'resize',
+					buffer,
+					{
+						width: finalWidth,
+						height: finalHeight,
+						colors: optimizeAfterResize ? colors : 256
+					},
+					(progress) => {
+						files = files.map(f => f.id === gifFile.id ? { ...f, progress } : f);
+					}
+				);
+				
+				const blob = new Blob([result], { type: 'image/gif' });
+				const url = URL.createObjectURL(blob);
+				
+				files = files.map(f => f.id === gifFile.id ? {
+					...f,
+					status: 'completed' as const,
+					progress: 100,
+					compressedUrl: url,
+					compressedBlob: blob,
+					compressedSize: blob.size
+				} : f);
+				
+			} catch (error) {
+				console.error('Resize error:', error);
+				files = files.map(f => f.id === gifFile.id ? {
+					...f,
+					status: 'error' as const,
+					error: error instanceof Error ? error.message : 'Resize failed'
+				} : f);
+			}
+		}
+		
 		isProcessing = false;
+		
+		const completed = files.filter(f => f.status === 'completed').length;
+		if (completed > 0) {
+			toast.success(`Resized ${completed} GIF(s)!`);
+		}
 	}
+
+	function downloadFile(gifFile: GifFile) {
+		if (!gifFile.compressedUrl) return;
+		const a = document.createElement('a');
+		a.href = gifFile.compressedUrl;
+		a.download = gifFile.file.name.replace('.gif', `-${targetWidth}x${targetHeight}.gif`);
+		a.click();
+	}
+
+	function downloadAll() {
+		const completed = files.filter(f => f.status === 'completed');
+		completed.forEach(f => downloadFile(f));
+	}
+
+	function openComparison(gifFile: GifFile) {
+		comparisonFile = gifFile;
+		showComparison = true;
+	}
+
+	const completedCount = $derived(files.filter(f => f.status === 'completed').length);
 </script>
 
 <svelte:head>
@@ -78,132 +214,253 @@
 	<Header />
 
 	<div class="fixed inset-0 -z-10 overflow-hidden">
-		<div class="absolute -top-1/2 -right-1/4 h-[800px] w-[800px] rounded-full bg-gradient-to-br from-blue-500/10 to-cyan-500/10 blur-3xl"></div>
-		<div class="absolute -bottom-1/2 -left-1/4 h-[600px] w-[600px] rounded-full bg-gradient-to-tr from-cyan-500/10 to-blue-500/10 blur-3xl"></div>
+		<div class="absolute -top-1/2 -right-1/4 h-[800px] w-[800px] rounded-full bg-gradient-to-br from-cyan-500/10 to-blue-500/10 blur-3xl"></div>
+		<div class="absolute -bottom-1/2 -left-1/4 h-[600px] w-[600px] rounded-full bg-gradient-to-tr from-blue-500/10 to-cyan-500/10 blur-3xl"></div>
 	</div>
 
 	<main class="flex-1 px-4 sm:px-6 lg:px-8 pt-28 pb-12">
 		<div class="mx-auto max-w-5xl">
 			<!-- Header -->
 			<div class="text-center mb-8" in:fade={{ duration: 200 }}>
-				<div class="inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-4 py-1.5 text-sm font-medium text-blue-400 mb-4">
-					<Maximize2 class="h-4 w-4" />
+				<div class="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-4 py-1.5 text-sm font-medium text-cyan-400 mb-4">
+					<Scaling class="h-4 w-4" />
 					Resize & Crop
 				</div>
 				<h1 class="text-3xl font-bold text-surface-100">
 					Resize GIFs to <span class="gradient-text">any dimension</span>
 				</h1>
 				<p class="mt-2 text-surface-500">
-					Change dimensions with aspect ratio presets and visual controls
+					Perfect for Discord emojis, stickers, and social media
 				</p>
 			</div>
 
-			{#if !file}
-				<DropZone 
-					accept=".gif,image/gif"
-					acceptLabel="GIF files only"
-					onfiles={handleFiles}
-				/>
-			{:else}
-				<div class="grid gap-6 lg:grid-cols-2" in:fly={{ y: 20, duration: 200 }}>
-					<!-- Preview -->
-					<div class="glass rounded-2xl p-4">
-						<div class="aspect-video bg-surface-900 rounded-xl overflow-hidden flex items-center justify-center">
-							<img src={previewUrl} alt="Preview" class="max-w-full max-h-full object-contain" />
-						</div>
-						<p class="mt-3 text-sm text-surface-500 text-center truncate">{file.name}</p>
-					</div>
+			<div class="grid gap-6 lg:grid-cols-2">
+				<!-- Left: Drop zone and file list -->
+				<div>
+					<DropZone 
+						accept=".gif,image/gif"
+						acceptLabel="GIF files only"
+						onfiles={handleFiles}
+						compact={files.length > 0}
+					/>
 
-					<!-- Settings -->
-					<div class="glass rounded-2xl p-6">
-						<h3 class="text-lg font-semibold text-surface-100 mb-6">Resize Options</h3>
-
-						<!-- Size Presets -->
-						<div class="mb-6">
-							<label class="block text-sm font-medium text-surface-300 mb-2">Quick Presets</label>
-							<div class="flex flex-wrap gap-2">
-								{#each sizePresets as preset}
-									<button
-										onclick={() => applyPreset(preset)}
-										class="rounded-lg bg-surface-800 px-3 py-2 text-sm text-surface-400 hover:bg-surface-700 hover:text-surface-200 transition-colors"
-									>
-										{preset.label}
-									</button>
-								{/each}
-							</div>
-						</div>
-
-						<!-- Dimensions -->
-						<div class="mb-6">
-							<label class="block text-sm font-medium text-surface-300 mb-2">Dimensions</label>
-							<div class="flex items-center gap-3">
-								<div class="flex-1">
-									<label class="text-xs text-surface-500">Width</label>
-									<input
-										type="number"
-										value={width}
-										oninput={(e) => updateWidth(parseInt(e.currentTarget.value) || 0)}
-										class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100"
-									/>
-								</div>
-								<button
-									onclick={() => maintainAspect = !maintainAspect}
-									class="mt-5 p-2 rounded-lg bg-surface-800 text-surface-400 hover:text-surface-200 transition-colors"
-									title={maintainAspect ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+					{#if files.length > 0}
+						<div class="mt-4 space-y-2" in:fly={{ y: 20, duration: 200 }}>
+							{#each files as gifFile (gifFile.id)}
+								<div 
+									class="glass rounded-xl p-3 flex items-center justify-between"
+									in:slide={{ duration: 200 }}
 								>
-									{#if maintainAspect}
-										<Lock class="h-5 w-5" />
-									{:else}
-										<Unlock class="h-5 w-5" />
-									{/if}
-								</button>
-								<div class="flex-1">
-									<label class="text-xs text-surface-500">Height</label>
-									<input
-										type="number"
-										value={height}
-										oninput={(e) => updateHeight(parseInt(e.currentTarget.value) || 0)}
-										class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100"
-									/>
+									<div class="flex items-center gap-3 min-w-0 flex-1">
+										<div class="h-12 w-12 rounded-lg bg-surface-800 overflow-hidden flex-shrink-0">
+											<img 
+												src={gifFile.compressedUrl || gifFile.originalUrl} 
+												alt="" 
+												class="w-full h-full object-cover"
+											/>
+										</div>
+										<div class="min-w-0 flex-1">
+											<p class="text-sm font-medium text-surface-200 truncate">{gifFile.file.name}</p>
+											<div class="flex items-center gap-2 text-xs">
+												{#if gifFile.width && gifFile.height}
+													<span class="text-surface-500">{gifFile.width}×{gifFile.height}</span>
+													<span class="text-surface-600">→</span>
+													<span class="text-cyan-400">{targetWidth}×{maintainAspectRatio && gifFile.width ? Math.round(targetWidth / (gifFile.width / gifFile.height)) : targetHeight}</span>
+												{/if}
+												<span class="text-surface-500">({formatBytes(gifFile.file.size)})</span>
+											</div>
+											
+											{#if gifFile.status === 'processing'}
+												<div class="mt-1 h-1 bg-surface-700 rounded-full overflow-hidden">
+													<div 
+														class="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all"
+														style="width: {gifFile.progress}%"
+													></div>
+												</div>
+											{/if}
+										</div>
+									</div>
+									
+									<div class="flex items-center gap-1 ml-2">
+										{#if gifFile.status === 'processing'}
+											<Loader2 class="h-5 w-5 text-cyan-400 animate-spin" />
+										{:else if gifFile.status === 'completed'}
+											<button
+												onclick={() => openComparison(gifFile)}
+												class="p-2 text-surface-400 hover:text-surface-200 transition-colors"
+												title="Compare"
+											>
+												<Eye class="h-4 w-4" />
+											</button>
+											<button
+												onclick={() => downloadFile(gifFile)}
+												class="p-2 text-green-400 hover:text-green-300 transition-colors"
+												title="Download"
+											>
+												<Download class="h-4 w-4" />
+											</button>
+										{/if}
+										<button
+											onclick={() => removeFile(gifFile.id)}
+											class="p-2 text-surface-500 hover:text-red-400 transition-colors"
+											title="Remove"
+										>
+											<Trash2 class="h-4 w-4" />
+										</button>
+									</div>
 								</div>
-							</div>
-						</div>
-
-						<!-- Aspect Ratio Presets -->
-						<div class="mb-6">
-							<label class="block text-sm font-medium text-surface-300 mb-2">Aspect Ratio</label>
-							<div class="flex gap-2">
-								{#each aspectPresets as preset}
-									<button
-										onclick={() => { aspectRatio = preset.value; if (maintainAspect) height = Math.round(width / aspectRatio); }}
-										class="flex-1 rounded-lg bg-surface-800 px-3 py-2 text-sm text-surface-400 hover:bg-surface-700 hover:text-surface-200 transition-colors"
-									>
-										<div class="font-medium">{preset.label}</div>
-										<div class="text-xs text-surface-500">{preset.desc}</div>
-									</button>
-								{/each}
-							</div>
-						</div>
-
-						<!-- Resize Button -->
-						<button
-							onclick={handleResize}
-							disabled={isProcessing}
-							class="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent-start to-accent-end px-6 py-3 text-base font-semibold text-white shadow-lg shadow-accent-start/30 transition-all hover:shadow-xl hover:shadow-accent-start/40 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{#if isProcessing}
-								<div class="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-								Resizing...
-							{:else}
-								<Maximize2 class="h-5 w-5" />
-								Resize to {width} × {height}
+							{/each}
+							
+							<!-- Download All -->
+							{#if completedCount > 0}
+								<button
+									onclick={downloadAll}
+									class="w-full mt-4 flex items-center justify-center gap-2 rounded-xl bg-green-500/20 border border-green-500/30 px-4 py-3 text-sm font-medium text-green-400 hover:bg-green-500/30 transition-colors"
+								>
+									<Download class="h-4 w-4" />
+									Download All ({completedCount})
+								</button>
 							{/if}
-						</button>
-					</div>
+						</div>
+					{/if}
 				</div>
-			{/if}
+
+				<!-- Right: Settings -->
+				<div class="glass rounded-2xl p-6" in:fly={{ y: 20, delay: 100, duration: 200 }}>
+					<h3 class="flex items-center gap-2 text-lg font-semibold text-surface-100 mb-6">
+						<Settings class="h-5 w-5 text-cyan-400" />
+						Resize Settings
+					</h3>
+
+					<!-- Size Presets -->
+					<div class="mb-6">
+						<label class="block text-sm font-medium text-surface-300 mb-3">Size Presets</label>
+						<div class="grid grid-cols-2 gap-2">
+							{#each sizePresets as preset}
+								<button
+									onclick={() => selectPreset(preset.id)}
+									class="flex items-center gap-2 rounded-xl px-4 py-3 text-left transition-all {selectedPreset === preset.id
+										? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/50 text-surface-100'
+										: 'bg-surface-800 text-surface-400 hover:bg-surface-700'}"
+								>
+									<span class="text-lg">{preset.icon}</span>
+									<div>
+										<p class="text-sm font-medium">{preset.label}</p>
+										{#if preset.width > 0}
+											<p class="text-xs text-surface-500">{preset.width}×{preset.height}</p>
+										{:else}
+											<p class="text-xs text-surface-500">Enter size below</p>
+										{/if}
+									</div>
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<!-- Custom Dimensions -->
+					<div class="mb-6">
+						<label class="block text-sm font-medium text-surface-300 mb-2">Dimensions</label>
+						<div class="flex items-center gap-3">
+							<div class="flex-1">
+								<label class="text-xs text-surface-500 mb-1 block">Width</label>
+								<input
+									type="number"
+									bind:value={targetWidth}
+									min="16"
+									max="2048"
+									class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100"
+									oninput={() => selectedPreset = 'custom'}
+								/>
+							</div>
+							<button
+								onclick={() => maintainAspectRatio = !maintainAspectRatio}
+								class="mt-5 p-2 rounded-lg transition-colors {maintainAspectRatio ? 'bg-cyan-500/20 text-cyan-400' : 'bg-surface-800 text-surface-500'}"
+								title={maintainAspectRatio ? 'Aspect ratio locked' : 'Aspect ratio unlocked'}
+							>
+								{#if maintainAspectRatio}
+									<Lock class="h-5 w-5" />
+								{:else}
+									<Unlock class="h-5 w-5" />
+								{/if}
+							</button>
+							<div class="flex-1">
+								<label class="text-xs text-surface-500 mb-1 block">Height</label>
+								<input
+									type="number"
+									bind:value={targetHeight}
+									min="16"
+									max="2048"
+									disabled={maintainAspectRatio}
+									class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100 disabled:opacity-50"
+									oninput={() => selectedPreset = 'custom'}
+								/>
+							</div>
+						</div>
+						{#if maintainAspectRatio}
+							<p class="text-xs text-surface-500 mt-2">Height will be calculated automatically to maintain aspect ratio</p>
+						{/if}
+					</div>
+
+					<!-- Optimize after resize -->
+					<div class="mb-6">
+						<label class="flex items-center gap-3 cursor-pointer">
+							<input
+								type="checkbox"
+								bind:checked={optimizeAfterResize}
+								class="h-5 w-5 rounded border-surface-600 bg-surface-800 text-cyan-400 focus:ring-cyan-400"
+							/>
+							<div>
+								<p class="text-sm font-medium text-surface-300">Optimize after resize</p>
+								<p class="text-xs text-surface-500">Reduce colors to minimize file size</p>
+							</div>
+						</label>
+					</div>
+
+					{#if optimizeAfterResize}
+						<div class="mb-6" in:slide={{ duration: 200 }}>
+							<label class="block text-sm font-medium text-surface-300 mb-2">
+								Colors: <span class="text-cyan-400">{colors}</span>
+							</label>
+							<input
+								type="range"
+								bind:value={colors}
+								min="16"
+								max="256"
+								step="16"
+								class="w-full accent-cyan-400"
+							/>
+						</div>
+					{/if}
+
+					<!-- Resize Button -->
+					<button
+						onclick={handleResize}
+						disabled={files.length === 0 || isProcessing}
+						class="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-cyan-500/30 transition-all hover:shadow-xl hover:shadow-cyan-500/40 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if isProcessing}
+							<Loader2 class="h-5 w-5 animate-spin" />
+							Resizing...
+						{:else}
+							<Scaling class="h-5 w-5" />
+							Resize {files.length} GIF{files.length !== 1 ? 's' : ''}
+						{/if}
+					</button>
+				</div>
+			</div>
 		</div>
 	</main>
 
 	<Footer />
 </div>
+
+<!-- Comparison Modal -->
+{#if showComparison && comparisonFile && comparisonFile.compressedUrl}
+	<CompareSlider
+		originalUrl={comparisonFile.originalUrl}
+		compressedUrl={comparisonFile.compressedUrl}
+		originalSize={comparisonFile.file.size}
+		compressedSize={comparisonFile.compressedSize || 0}
+		onclose={() => showComparison = false}
+	/>
+{/if}

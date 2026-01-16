@@ -26,6 +26,9 @@
 	},
 	"dependencies": {
 		"gifenc": "^1.0.3",
-		"jszip": "^3.10.1"
+		"gifsicle-wasm-browser": "^1.5.19",
+		"idb": "^8.0.0",
+		"jszip": "^3.10.1",
+		"mediabunny": "^1.0.0"
 	}
 }

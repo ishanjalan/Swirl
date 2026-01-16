@@ -2,11 +2,25 @@
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
+	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Gauge, Settings, Download, Trash2 } from 'lucide-svelte';
-	import { fade, fly } from 'svelte/transition';
+	import { Gauge, Settings, Download, Trash2, Eye, Loader2, CheckCircle, AlertCircle } from 'lucide-svelte';
+	import { fade, fly, slide } from 'svelte/transition';
+	import { processGif, initPool } from '$lib/utils/worker-pool';
 
-	let files = $state<File[]>([]);
+	interface GifFile {
+		id: string;
+		file: File;
+		originalUrl: string;
+		status: 'pending' | 'processing' | 'completed' | 'error';
+		progress: number;
+		error?: string;
+		compressedUrl?: string;
+		compressedBlob?: Blob;
+		compressedSize?: number;
+	}
+
+	let files = $state<GifFile[]>([]);
 	let isProcessing = $state(false);
 
 	// Size presets
@@ -22,7 +36,15 @@
 	let selectedPreset = $state<string | null>('discord');
 	let targetSizeMB = $state(8);
 	let colorReduction = $state(256);
-	let lossy = $state(true);
+	let lossy = $state(80);
+
+	// Comparison modal
+	let showComparison = $state(false);
+	let comparisonFile = $state<GifFile | null>(null);
+
+	function generateId(): string {
+		return `gif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+	}
 
 	function handleFiles(newFiles: File[]) {
 		const gifFiles = newFiles.filter(f => f.type === 'image/gif' || f.name.endsWith('.gif'));
@@ -30,12 +52,26 @@
 			toast.error('Please select GIF files');
 			return;
 		}
-		files = [...files, ...gifFiles];
+		
+		const newGifFiles: GifFile[] = gifFiles.map(file => ({
+			id: generateId(),
+			file,
+			originalUrl: URL.createObjectURL(file),
+			status: 'pending',
+			progress: 0
+		}));
+		
+		files = [...files, ...newGifFiles];
 		toast.success(`Added ${gifFiles.length} GIF(s)`);
 	}
 
-	function removeFile(index: number) {
-		files = files.filter((_, i) => i !== index);
+	function removeFile(id: string) {
+		const file = files.find(f => f.id === id);
+		if (file) {
+			URL.revokeObjectURL(file.originalUrl);
+			if (file.compressedUrl) URL.revokeObjectURL(file.compressedUrl);
+		}
+		files = files.filter(f => f.id !== id);
 	}
 
 	function selectPreset(presetId: string) {
@@ -56,11 +92,88 @@
 
 	async function handleOptimize() {
 		if (files.length === 0) return;
+		
 		isProcessing = true;
-		toast.info('Optimization coming soon!');
-		await new Promise(r => setTimeout(r, 1000));
+		
+		// Initialize worker pool
+		await initPool();
+		
+		const pendingFiles = files.filter(f => f.status === 'pending' || f.status === 'error');
+		
+		for (const gifFile of pendingFiles) {
+			// Update status to processing
+			files = files.map(f => f.id === gifFile.id ? { ...f, status: 'processing' as const, progress: 0 } : f);
+			
+			try {
+				const buffer = await gifFile.file.arrayBuffer();
+				
+				const { result, stats } = await processGif(
+					gifFile.id,
+					'optimize',
+					buffer,
+					{
+						targetSizeKB: targetSizeMB * 1024,
+						colors: colorReduction,
+						lossy: lossy
+					},
+					(progress) => {
+						files = files.map(f => f.id === gifFile.id ? { ...f, progress } : f);
+					}
+				);
+				
+				const blob = new Blob([result], { type: 'image/gif' });
+				const url = URL.createObjectURL(blob);
+				
+				files = files.map(f => f.id === gifFile.id ? {
+					...f,
+					status: 'completed' as const,
+					progress: 100,
+					compressedUrl: url,
+					compressedBlob: blob,
+					compressedSize: blob.size
+				} : f);
+				
+			} catch (error) {
+				console.error('Optimization error:', error);
+				files = files.map(f => f.id === gifFile.id ? {
+					...f,
+					status: 'error' as const,
+					error: error instanceof Error ? error.message : 'Optimization failed'
+				} : f);
+			}
+		}
+		
 		isProcessing = false;
+		
+		const completed = files.filter(f => f.status === 'completed').length;
+		if (completed > 0) {
+			toast.success(`Optimized ${completed} GIF(s)!`);
+		}
 	}
+
+	function downloadFile(gifFile: GifFile) {
+		if (!gifFile.compressedUrl) return;
+		const a = document.createElement('a');
+		a.href = gifFile.compressedUrl;
+		a.download = gifFile.file.name.replace('.gif', '-optimized.gif');
+		a.click();
+	}
+
+	function downloadAll() {
+		const completed = files.filter(f => f.status === 'completed');
+		completed.forEach(f => downloadFile(f));
+	}
+
+	function openComparison(gifFile: GifFile) {
+		comparisonFile = gifFile;
+		showComparison = true;
+	}
+
+	// Calculate totals
+	const totalOriginal = $derived(files.reduce((sum, f) => sum + f.file.size, 0));
+	const totalCompressed = $derived(files.filter(f => f.compressedSize).reduce((sum, f) => sum + (f.compressedSize || 0), 0));
+	const totalSavings = $derived(totalOriginal > 0 && totalCompressed > 0 ? Math.round((1 - totalCompressed / totalOriginal) * 100) : 0);
+	const completedCount = $derived(files.filter(f => f.status === 'completed').length);
 </script>
 
 <svelte:head>
@@ -103,25 +216,99 @@
 
 					{#if files.length > 0}
 						<div class="mt-4 space-y-2" in:fly={{ y: 20, duration: 200 }}>
-							{#each files as file, i}
-								<div class="glass rounded-xl p-3 flex items-center justify-between">
-									<div class="flex items-center gap-3 min-w-0">
-										<div class="h-10 w-10 rounded-lg bg-surface-800 flex items-center justify-center text-lg">
-											🖼️
+							{#each files as gifFile (gifFile.id)}
+								<div 
+									class="glass rounded-xl p-3 flex items-center justify-between"
+									in:slide={{ duration: 200 }}
+								>
+									<div class="flex items-center gap-3 min-w-0 flex-1">
+										<div class="h-12 w-12 rounded-lg bg-surface-800 overflow-hidden flex-shrink-0">
+											<img 
+												src={gifFile.compressedUrl || gifFile.originalUrl} 
+												alt="" 
+												class="w-full h-full object-cover"
+											/>
 										</div>
-										<div class="min-w-0">
-											<p class="text-sm font-medium text-surface-200 truncate">{file.name}</p>
-											<p class="text-xs text-surface-500">{formatBytes(file.size)}</p>
+										<div class="min-w-0 flex-1">
+											<p class="text-sm font-medium text-surface-200 truncate">{gifFile.file.name}</p>
+											<div class="flex items-center gap-2 text-xs">
+												<span class="text-surface-500">{formatBytes(gifFile.file.size)}</span>
+												{#if gifFile.compressedSize}
+													<span class="text-surface-600">→</span>
+													<span class="text-green-400">{formatBytes(gifFile.compressedSize)}</span>
+													<span class="text-green-400">
+														(-{Math.round((1 - gifFile.compressedSize / gifFile.file.size) * 100)}%)
+													</span>
+												{/if}
+											</div>
+											
+											{#if gifFile.status === 'processing'}
+												<div class="mt-1 h-1 bg-surface-700 rounded-full overflow-hidden">
+													<div 
+														class="h-full bg-gradient-to-r from-accent-start to-accent-end transition-all"
+														style="width: {gifFile.progress}%"
+													></div>
+												</div>
+											{/if}
 										</div>
 									</div>
-									<button
-										onclick={() => removeFile(i)}
-										class="p-2 text-surface-500 hover:text-red-400 transition-colors"
-									>
-										<Trash2 class="h-4 w-4" />
-									</button>
+									
+									<div class="flex items-center gap-1 ml-2">
+										{#if gifFile.status === 'processing'}
+											<Loader2 class="h-5 w-5 text-accent-start animate-spin" />
+										{:else if gifFile.status === 'completed'}
+											<button
+												onclick={() => openComparison(gifFile)}
+												class="p-2 text-surface-400 hover:text-surface-200 transition-colors"
+												title="Compare"
+											>
+												<Eye class="h-4 w-4" />
+											</button>
+											<button
+												onclick={() => downloadFile(gifFile)}
+												class="p-2 text-green-400 hover:text-green-300 transition-colors"
+												title="Download"
+											>
+												<Download class="h-4 w-4" />
+											</button>
+										{:else if gifFile.status === 'error'}
+											<AlertCircle class="h-5 w-5 text-red-400" />
+										{/if}
+										<button
+											onclick={() => removeFile(gifFile.id)}
+											class="p-2 text-surface-500 hover:text-red-400 transition-colors"
+											title="Remove"
+										>
+											<Trash2 class="h-4 w-4" />
+										</button>
+									</div>
 								</div>
 							{/each}
+							
+							<!-- Summary -->
+							{#if completedCount > 0}
+								<div class="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/30" in:fly={{ y: 10, duration: 200 }}>
+									<div class="flex items-center justify-between">
+										<div>
+											<p class="text-green-400 font-medium flex items-center gap-2">
+												<CheckCircle class="h-4 w-4" />
+												{completedCount} GIF{completedCount !== 1 ? 's' : ''} optimized
+											</p>
+											<p class="text-sm text-surface-500">
+												{formatBytes(totalOriginal)} → {formatBytes(totalCompressed)} 
+												<span class="text-green-400">(-{totalSavings}%)</span>
+											</p>
+										</div>
+										<button
+											onclick={downloadAll}
+											class="flex items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition-colors"
+										>
+											<Download class="h-4 w-4" />
+											Download All
+										</button>
+									</div>
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</div>
@@ -189,19 +376,23 @@
 						</div>
 					</div>
 
-					<!-- Lossy toggle -->
+					<!-- Lossy Level -->
 					<div class="mb-6">
-						<label class="flex items-center gap-3 cursor-pointer">
-							<input
-								type="checkbox"
-								bind:checked={lossy}
-								class="h-5 w-5 rounded border-surface-600 bg-surface-800 text-accent-start focus:ring-accent-start"
-							/>
-							<div>
-								<p class="text-sm font-medium text-surface-300">Lossy compression</p>
-								<p class="text-xs text-surface-500">Better compression, slight quality loss</p>
-							</div>
+						<label class="block text-sm font-medium text-surface-300 mb-2">
+							Compression: <span class="text-accent-start">{lossy}</span>
 						</label>
+						<input
+							type="range"
+							bind:value={lossy}
+							min="0"
+							max="200"
+							step="10"
+							class="w-full accent-accent-start"
+						/>
+						<div class="flex justify-between text-xs text-surface-500 mt-1">
+							<span>0 (lossless)</span>
+							<span>200 (max compression)</span>
+						</div>
 					</div>
 
 					<!-- Optimize Button -->
@@ -211,7 +402,7 @@
 						class="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent-start to-accent-end px-6 py-3 text-base font-semibold text-white shadow-lg shadow-accent-start/30 transition-all hover:shadow-xl hover:shadow-accent-start/40 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						{#if isProcessing}
-							<div class="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+							<Loader2 class="h-5 w-5 animate-spin" />
 							Optimizing...
 						{:else}
 							<Gauge class="h-5 w-5" />
@@ -225,3 +416,14 @@
 
 	<Footer />
 </div>
+
+<!-- Comparison Modal -->
+{#if showComparison && comparisonFile && comparisonFile.compressedUrl}
+	<CompareSlider
+		originalUrl={comparisonFile.originalUrl}
+		compressedUrl={comparisonFile.compressedUrl}
+		originalSize={comparisonFile.file.size}
+		compressedSize={comparisonFile.compressedSize || 0}
+		onclose={() => showComparison = false}
+	/>
+{/if}
