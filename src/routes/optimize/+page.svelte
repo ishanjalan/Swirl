@@ -4,9 +4,10 @@
 	import DropZone from '$lib/components/DropZone.svelte';
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Gauge, Settings, Download, Trash2, Eye, Loader2, CheckCircle, AlertCircle } from 'lucide-svelte';
+	import { Gauge, Settings, Download, Trash2, Eye, Loader2, CheckCircle, AlertCircle, Clock, Film, Maximize2 } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { processGif, initPool } from '$lib/utils/worker-pool';
+	import { parseGifFile, formatDuration, type GifMetadata } from '$lib/utils/gif-parser';
 
 	interface GifFile {
 		id: string;
@@ -18,6 +19,7 @@
 		compressedUrl?: string;
 		compressedBlob?: Blob;
 		compressedSize?: number;
+		metadata?: GifMetadata;
 	}
 
 	let files = $state<GifFile[]>([]);
@@ -46,20 +48,33 @@
 		return `gif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 	}
 
-	function handleFiles(newFiles: File[]) {
+	async function handleFiles(newFiles: File[]) {
 		const gifFiles = newFiles.filter(f => f.type === 'image/gif' || f.name.endsWith('.gif'));
 		if (gifFiles.length === 0) {
 			toast.error('Please select GIF files');
 			return;
 		}
 		
-		const newGifFiles: GifFile[] = gifFiles.map(file => ({
-			id: generateId(),
-			file,
-			originalUrl: URL.createObjectURL(file),
-			status: 'pending',
-			progress: 0
-		}));
+		const newGifFiles: GifFile[] = [];
+		
+		for (const file of gifFiles) {
+			const gifFile: GifFile = {
+				id: generateId(),
+				file,
+				originalUrl: URL.createObjectURL(file),
+				status: 'pending',
+				progress: 0
+			};
+			
+			// Parse metadata
+			try {
+				gifFile.metadata = await parseGifFile(file);
+			} catch (e) {
+				console.warn('Failed to parse GIF metadata:', e);
+			}
+			
+			newGifFiles.push(gifFile);
+		}
 		
 		files = [...files, ...newGifFiles];
 		toast.success(`Added ${gifFiles.length} GIF(s)`);
@@ -231,7 +246,27 @@
 										</div>
 										<div class="min-w-0 flex-1">
 											<p class="text-sm font-medium text-surface-200 truncate">{gifFile.file.name}</p>
-											<div class="flex items-center gap-2 text-xs">
+											
+											<!-- Metadata display -->
+											{#if gifFile.metadata}
+												<div class="flex items-center gap-3 text-xs text-surface-500 mt-0.5">
+													<span class="flex items-center gap-1">
+														<Clock class="h-3 w-3" />
+														{formatDuration(gifFile.metadata.duration)}
+													</span>
+													<span class="flex items-center gap-1">
+														<Film class="h-3 w-3" />
+														{gifFile.metadata.frameCount} frames
+													</span>
+													<span>{gifFile.metadata.fps} FPS</span>
+													<span class="flex items-center gap-1">
+														<Maximize2 class="h-3 w-3" />
+														{gifFile.metadata.width}×{gifFile.metadata.height}
+													</span>
+												</div>
+											{/if}
+											
+											<div class="flex items-center gap-2 text-xs mt-0.5">
 												<span class="text-surface-500">{formatBytes(gifFile.file.size)}</span>
 												{#if gifFile.compressedSize}
 													<span class="text-surface-600">→</span>

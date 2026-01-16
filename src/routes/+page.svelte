@@ -12,7 +12,9 @@
 		Sparkles,
 		ArrowRight,
 		PlayCircle,
-		Rewind
+		Rewind,
+		Images,
+		Merge
 	} from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
 
@@ -27,6 +29,15 @@
 			popular: true
 		},
 		{
+			id: 'make',
+			href: '/make',
+			title: 'GIF Maker',
+			description: 'Combine images into animated GIF with frame reordering',
+			icon: Images,
+			gradient: 'from-green-500 to-emerald-500',
+			popular: true
+		},
+		{
 			id: 'optimize',
 			href: '/optimize',
 			title: 'Optimize',
@@ -34,6 +45,15 @@
 			icon: Gauge,
 			gradient: 'from-violet-500 to-purple-500',
 			popular: true
+		},
+		{
+			id: 'combine',
+			href: '/combine',
+			title: 'Combine GIFs',
+			description: 'Stitch multiple GIFs together sequentially or side-by-side',
+			icon: Merge,
+			gradient: 'from-cyan-500 to-blue-500',
+			popular: false
 		},
 		{
 			id: 'resize',

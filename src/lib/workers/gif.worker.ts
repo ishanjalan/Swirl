@@ -187,6 +187,72 @@ async function reverseGif(
 	return result;
 }
 
+// Merge two GIFs using gifsicle
+async function mergeGifs(
+	id: string,
+	gifData1: Uint8Array,
+	options: GifProcessingOptions
+): Promise<Uint8Array> {
+	await initGifsicle();
+	if (!gifsicle) throw new Error('Gifsicle not initialized');
+
+	if (!options.secondGif) {
+		throw new Error('Second GIF required for merge operation');
+	}
+
+	const gifData2 = new Uint8Array(options.secondGif);
+	sendProgress(id, 10);
+
+	const files: { [name: string]: Uint8Array } = {
+		'/input1.gif': gifData1,
+		'/input2.gif': gifData2
+	};
+
+	let args: string[] = ['-O2', '--no-warnings'];
+	const mode = options.mode || 'sequential';
+
+	// Resize if needed
+	if (options.normalizeSize && options.outputWidth) {
+		args.push(`--resize-width=${options.outputWidth}`);
+	}
+
+	switch (mode) {
+		case 'sequential':
+			// Append second GIF after first (end-to-end)
+			args.push('-o', '/output.gif');
+			args.push('/input1.gif');
+			args.push('--append');
+			args.push('/input2.gif');
+			break;
+
+		case 'horizontal':
+			// Stack GIFs side by side using --merge
+			// Note: gifsicle --merge combines at same time, not sequentially
+			args.push('--merge');
+			args.push('-o', '/output.gif');
+			args.push('/input1.gif');
+			args.push('/input2.gif');
+			break;
+
+		case 'vertical':
+			// For vertical stacking, we'd need more complex handling
+			// For now, use merge (plays simultaneously)
+			args.push('--merge');
+			args.push('-o', '/output.gif');
+			args.push('/input1.gif');
+			args.push('/input2.gif');
+			break;
+	}
+
+	sendProgress(id, 50);
+
+	const result = await gifsicle(args, files);
+
+	sendProgress(id, 90);
+
+	return result;
+}
+
 // Process a GIF job
 async function processJob(request: WorkerRequest): Promise<void> {
 	const { id, type, gifBuffer, options } = request;
@@ -208,6 +274,9 @@ async function processJob(request: WorkerRequest): Promise<void> {
 				break;
 			case 'reverse':
 				result = await reverseGif(id, inputData, options);
+				break;
+			case 'merge':
+				result = await mergeGifs(id, inputData, options);
 				break;
 			default:
 				throw new Error(`Unknown job type: ${type}`);

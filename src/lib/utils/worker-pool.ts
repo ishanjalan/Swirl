@@ -3,7 +3,7 @@
 
 export interface GifJob {
 	id: string;
-	type: 'optimize' | 'resize' | 'speed' | 'reverse';
+	type: 'optimize' | 'resize' | 'speed' | 'reverse' | 'merge';
 	gifBuffer: ArrayBuffer;
 	options: GifProcessingOptions;
 	onProgress?: (progress: number) => void;
@@ -26,6 +26,12 @@ export interface GifProcessingOptions {
 	speedMultiplier?: number;
 	reverse?: boolean;
 	boomerang?: boolean;
+	
+	// Merge options
+	mode?: 'sequential' | 'horizontal' | 'vertical';
+	secondGif?: ArrayBuffer;
+	normalizeSize?: boolean;
+	outputWidth?: number;
 }
 
 export interface ProcessingStats {
@@ -37,7 +43,7 @@ export interface ProcessingStats {
 
 export interface WorkerRequest {
 	id: string;
-	type: 'optimize' | 'resize' | 'speed' | 'reverse';
+	type: 'optimize' | 'resize' | 'speed' | 'reverse' | 'merge';
 	gifBuffer: ArrayBuffer;
 	options: GifProcessingOptions;
 }
