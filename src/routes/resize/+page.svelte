@@ -3,11 +3,13 @@
 	import Footer from '$lib/components/Footer.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
+	import BatchSummary from '$lib/components/BatchSummary.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Scaling, Settings, Download, Trash2, Eye, Loader2, Lock, Unlock, Clock, Film } from 'lucide-svelte';
+	import { Scaling, Settings, Download, Trash2, Eye, Loader2, Lock, Unlock, Clock, Film, RefreshCw } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { processGif, initPool } from '$lib/utils/worker-pool';
 	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
+	import { downloadAllAsZip, downloadBlob } from '$lib/utils/download';
 
 	interface GifFile {
 		id: string;
@@ -22,6 +24,7 @@
 		compressedBlob?: Blob;
 		compressedSize?: number;
 		metadata?: GifMetadata;
+		processingTime?: number;
 	}
 
 	let files = $state<GifFile[]>([]);
@@ -48,8 +51,16 @@
 	let showComparison = $state(false);
 	let comparisonFile = $state<GifFile | null>(null);
 
+	// Batch summary modal
+	let showBatchSummary = $state(false);
+
 	function generateId(): string {
 		return `gif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+	}
+
+	function formatTime(ms: number): string {
+		if (ms < 1000) return `${ms}ms`;
+		return `${(ms / 1000).toFixed(1)}s`;
 	}
 
 	async function handleFiles(newFiles: File[]) {
@@ -125,6 +136,7 @@
 		
 		for (const gifFile of pendingFiles) {
 			// Update status to processing
+			const startTime = performance.now();
 			files = files.map(f => f.id === gifFile.id ? { ...f, status: 'processing' as const, progress: 0 } : f);
 			
 			try {
@@ -160,6 +172,7 @@
 					}
 				);
 				
+				const processingTime = Math.round(performance.now() - startTime);
 				const blob = new Blob([result], { type: 'image/gif' });
 				const url = URL.createObjectURL(blob);
 				
@@ -169,7 +182,8 @@
 					progress: 100,
 					compressedUrl: url,
 					compressedBlob: blob,
-					compressedSize: blob.size
+					compressedSize: blob.size,
+					processingTime
 				} : f);
 				
 			} catch (error) {
@@ -184,23 +198,55 @@
 		
 		isProcessing = false;
 		
-		const completed = files.filter(f => f.status === 'completed').length;
-		if (completed > 0) {
-			toast.success(`Resized ${completed} GIF(s)!`);
+		const completedFiles = files.filter(f => f.status === 'completed');
+		if (completedFiles.length > 0) {
+			if (completedFiles.length === 1 && completedFiles[0].compressedUrl) {
+				// Auto-open compare for single file
+				openComparison(completedFiles[0]);
+			} else if (completedFiles.length > 1) {
+				// Show batch summary for multiple files
+				showBatchSummary = true;
+			}
 		}
 	}
 
-	function downloadFile(gifFile: GifFile) {
-		if (!gifFile.compressedUrl) return;
-		const a = document.createElement('a');
-		a.href = gifFile.compressedUrl;
-		a.download = gifFile.file.name.replace('.gif', `-${targetWidth}x${targetHeight}.gif`);
-		a.click();
+	async function reprocessAll() {
+		files = files.map(f => {
+			if (f.status === 'completed') {
+				if (f.compressedUrl) URL.revokeObjectURL(f.compressedUrl);
+				return {
+					...f,
+					status: 'pending' as const,
+					progress: 0,
+					compressedUrl: undefined,
+					compressedBlob: undefined,
+					compressedSize: undefined
+				};
+			}
+			return f;
+		});
+		await handleResize();
 	}
 
-	function downloadAll() {
-		const completed = files.filter(f => f.status === 'completed');
-		completed.forEach(f => downloadFile(f));
+	function downloadFile(gifFile: GifFile) {
+		if (!gifFile.compressedBlob) return;
+		downloadBlob(gifFile.compressedBlob, gifFile.file.name.replace('.gif', `-${targetWidth}x${targetHeight}.gif`));
+	}
+
+	async function downloadAll() {
+		const completed = files.filter(f => f.status === 'completed' && f.compressedBlob);
+		if (completed.length === 0) return;
+		
+		if (completed.length === 1) {
+			downloadFile(completed[0]);
+		} else {
+			const items = completed.map(f => ({
+				name: f.file.name.replace('.gif', `-${targetWidth}x${targetHeight}.gif`),
+				blob: f.compressedBlob!
+			}));
+			await downloadAllAsZip(items, 'resized-gifs.zip');
+			toast.success(`Downloaded ${completed.length} GIFs as ZIP`);
+		}
 	}
 
 	function openComparison(gifFile: GifFile) {
@@ -209,6 +255,8 @@
 	}
 
 	const completedCount = $derived(files.filter(f => f.status === 'completed').length);
+	const totalOriginal = $derived(files.reduce((sum, f) => sum + f.file.size, 0));
+	const totalCompressed = $derived(files.filter(f => f.compressedSize).reduce((sum, f) => sum + (f.compressedSize || 0), 0));
 </script>
 
 <svelte:head>
@@ -289,6 +337,13 @@
 													<span class="text-cyan-400">{targetWidth}×{maintainAspectRatio && gifFile.width ? Math.round(targetWidth / (gifFile.width / gifFile.height)) : targetHeight}</span>
 												{/if}
 												<span class="text-surface-500">({formatBytes(gifFile.file.size)})</span>
+												{#if gifFile.compressedSize}
+													<span class="text-surface-600">→</span>
+													<span class="text-cyan-400">{formatBytes(gifFile.compressedSize)}</span>
+												{/if}
+												{#if gifFile.processingTime}
+													<span class="text-surface-500">• {formatTime(gifFile.processingTime)}</span>
+												{/if}
 											</div>
 											
 											{#if gifFile.status === 'processing'}
@@ -454,19 +509,32 @@
 					{/if}
 
 					<!-- Resize Button -->
-					<button
-						onclick={handleResize}
-						disabled={files.length === 0 || isProcessing}
-						class="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-cyan-500/30 transition-all hover:shadow-xl hover:shadow-cyan-500/40 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-					>
-						{#if isProcessing}
-							<Loader2 class="h-5 w-5 animate-spin" />
-							Resizing...
-						{:else}
-							<Scaling class="h-5 w-5" />
-							Resize {files.length} GIF{files.length !== 1 ? 's' : ''}
+					<div class="flex gap-2">
+						<button
+							onclick={handleResize}
+							disabled={files.length === 0 || isProcessing}
+							class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-cyan-500/30 transition-all hover:shadow-xl hover:shadow-cyan-500/40 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{#if isProcessing}
+								<Loader2 class="h-5 w-5 animate-spin" />
+								Resizing...
+							{:else}
+								<Scaling class="h-5 w-5" />
+								Resize {files.length} GIF{files.length !== 1 ? 's' : ''}
+							{/if}
+						</button>
+						
+						{#if completedCount > 0}
+							<button
+								onclick={reprocessAll}
+								disabled={isProcessing}
+								class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-3 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+								title="Re-resize all with current settings"
+							>
+								<RefreshCw class="h-4 w-4" />
+							</button>
 						{/if}
-					</button>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -483,5 +551,16 @@
 		originalSize={comparisonFile.file.size}
 		compressedSize={comparisonFile.compressedSize || 0}
 		onclose={() => showComparison = false}
+	/>
+{/if}
+
+<!-- Batch Summary Modal -->
+{#if showBatchSummary && completedCount > 1}
+	<BatchSummary
+		totalFiles={completedCount}
+		totalOriginalSize={totalOriginal}
+		totalCompressedSize={totalCompressed}
+		ondownloadAll={downloadAll}
+		onclose={() => showBatchSummary = false}
 	/>
 {/if}

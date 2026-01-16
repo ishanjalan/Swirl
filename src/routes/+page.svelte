@@ -22,7 +22,7 @@
 			id: 'video-to-gif',
 			href: '/video-to-gif',
 			title: 'Video to GIF',
-			description: 'Convert MP4, WebM, or MOV videos to animated GIF',
+			description: 'Turn any video clip into a shareable GIF',
 			icon: Film,
 			gradient: 'from-pink-500 to-rose-500',
 			popular: true
@@ -31,7 +31,7 @@
 			id: 'make',
 			href: '/make',
 			title: 'GIF Maker',
-			description: 'Combine images into animated GIF with frame reordering',
+			description: 'Create GIFs from images with drag-and-drop',
 			icon: Images,
 			gradient: 'from-green-500 to-emerald-500',
 			popular: true
@@ -40,7 +40,7 @@
 			id: 'optimize',
 			href: '/optimize',
 			title: 'Optimize',
-			description: 'Compress GIFs with smart presets for Discord, Twitter, Slack',
+			description: 'Shrink GIFs for Discord, Slack, Twitter — one click',
 			icon: Gauge,
 			gradient: 'from-violet-500 to-purple-500',
 			popular: true
@@ -49,7 +49,7 @@
 			id: 'combine',
 			href: '/combine',
 			title: 'Combine GIFs',
-			description: 'Stitch multiple GIFs together sequentially or side-by-side',
+			description: 'Merge multiple GIFs into one seamless animation',
 			icon: Merge,
 			gradient: 'from-cyan-500 to-blue-500',
 			popular: false
@@ -58,7 +58,7 @@
 			id: 'resize',
 			href: '/resize',
 			title: 'Resize',
-			description: 'Change dimensions with presets for Discord, social media, and more',
+			description: 'Resize for emojis, stickers, or any platform',
 			icon: Maximize2,
 			gradient: 'from-blue-500 to-cyan-500',
 			popular: false
@@ -67,7 +67,7 @@
 			id: 'speed',
 			href: '/speed',
 			title: 'Speed & Reverse',
-			description: 'Slow down, speed up, reverse, or create boomerang loops',
+			description: 'Speed up, slow down, reverse, or loop',
 			icon: Rewind,
 			gradient: 'from-amber-500 to-orange-500',
 			popular: false
@@ -76,7 +76,7 @@
 			id: 'split',
 			href: '/split',
 			title: 'Split Frames',
-			description: 'Extract individual frames as PNG images (coming soon)',
+			description: 'Export every frame as PNG',
 			icon: Layers,
 			gradient: 'from-emerald-500 to-teal-500',
 			popular: false
@@ -86,18 +86,18 @@
 	const features = [
 		{
 			icon: Zap,
-			title: 'Instant Processing',
-			description: 'WebCodecs + WebAssembly for blazing fast encoding'
+			title: 'Lightning Fast',
+			description: 'Hardware-accelerated encoding — no waiting around'
 		},
 		{
 			icon: Shield,
 			title: '100% Private',
-			description: 'Files never leave your device — zero uploads'
+			description: 'Your files never leave your computer'
 		},
 		{
 			icon: Sparkles,
-			title: 'Powerful Tools',
-			description: 'Optimize, resize, combine, and create GIFs with ease'
+			title: 'All-in-One',
+			description: 'Everything you need in one place'
 		}
 	];
 
@@ -130,23 +130,23 @@
 					class="mb-4 inline-flex items-center gap-2 rounded-full bg-accent-start/10 px-4 py-1.5 text-sm font-medium text-accent-start"
 				>
 					<Sparkles class="h-4 w-4" />
-					Free & Open Source • No Uploads Required
+					100% Free • Works Offline • No Account Needed
 				</div>
 				
 				<h1 class="mb-4 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-					<span class="gradient-text">GIF tools</span> that
+					<span class="text-surface-100">The</span> <span class="gradient-text">GIF toolkit</span>
 					<br class="hidden sm:block" />
-					<span class="text-surface-400">actually respect you</span>
+					<span class="text-surface-100">you actually want</span>
 				</h1>
 				
 				<p class="mx-auto max-w-2xl text-lg text-surface-500 leading-relaxed">
-					Convert, optimize, resize, and transform GIFs entirely in your browser.
-					<span class="font-medium text-surface-300">No server uploads</span> — your files stay private.
+					Create, convert, and optimize GIFs with professional tools —
+					all running locally in your browser. <span class="font-semibold text-surface-300">Fast. Private. Free.</span>
 				</p>
 
 				<!-- Smart presets pill -->
 				<div class="mt-6 flex flex-wrap items-center justify-center gap-2">
-					<span class="text-sm text-surface-500">Smart presets for:</span>
+					<span class="text-sm text-surface-500">One-click presets for:</span>
 					{#each presets as preset}
 						<span class="inline-flex items-center gap-1.5 rounded-full bg-surface-800 px-3 py-1 text-sm text-surface-300">
 							<span>{preset.icon}</span>
@@ -213,26 +213,22 @@
 				{/each}
 			</div>
 
-			<!-- Input formats -->
-			<div class="glass rounded-2xl p-6 text-center" in:fade={{ delay: 600, duration: 300 }}>
-				<h3 class="text-lg font-semibold text-surface-100 mb-4">Supported Input Formats</h3>
-				<div class="flex flex-wrap items-center justify-center gap-3">
-					<span class="rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						GIF
-					</span>
-					<span class="rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						MP4
-					</span>
-					<span class="rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						WebM
-					</span>
-					<span class="rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-						PNG/JPG
-					</span>
+			<!-- Stats Bar -->
+			<div class="glass rounded-2xl p-6" in:fade={{ delay: 600, duration: 300 }}>
+				<div class="grid grid-cols-3 gap-6 text-center">
+					<div>
+						<p class="text-2xl font-bold text-surface-100">7</p>
+						<p class="text-sm text-surface-500">Tools</p>
+					</div>
+					<div>
+						<p class="text-2xl font-bold text-surface-100">Unlimited</p>
+						<p class="text-sm text-surface-500">Files</p>
+					</div>
+					<div>
+						<p class="text-2xl font-bold text-surface-100">Zero</p>
+						<p class="text-sm text-surface-500">Data Collection</p>
+					</div>
 				</div>
-				<p class="mt-4 text-sm text-surface-500">
-					Convert videos to GIF, combine images into animations, or optimize existing GIFs
-				</p>
 			</div>
 		</div>
 	</main>

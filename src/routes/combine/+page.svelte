@@ -8,6 +8,7 @@
 	import { flip } from 'svelte/animate';
 	import { processGif, initPool } from '$lib/utils/worker-pool';
 	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
+	import { downloadBlob } from '$lib/utils/download';
 
 	interface GifFile {
 		id: string;
@@ -196,12 +197,9 @@
 	}
 
 	function downloadResult() {
-		if (!resultUrl) return;
-		const a = document.createElement('a');
-		a.href = resultUrl;
+		if (!resultBlob) return;
 		const modeName = combineMode === 'sequential' ? 'merged' : combineMode;
-		a.download = `swirl-${modeName}-${Date.now()}.gif`;
-		a.click();
+		downloadBlob(resultBlob, `swirl-${modeName}-${Date.now()}.gif`);
 	}
 
 	function clearAll() {

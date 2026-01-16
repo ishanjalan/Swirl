@@ -14,7 +14,8 @@
 		{ href: '/optimize', label: 'Optimize' },
 		{ href: '/combine', label: 'Combine' },
 		{ href: '/resize', label: 'Resize' },
-		{ href: '/speed', label: 'Speed' }
+		{ href: '/speed', label: 'Speed' },
+		{ href: '/split', label: 'Split' }
 	];
 
 	onMount(() => {

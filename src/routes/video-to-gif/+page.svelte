@@ -4,6 +4,7 @@
 	import DropZone from '$lib/components/DropZone.svelte';
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
+	import TimelineSlider from '$lib/components/TimelineSlider.svelte';
 	import { Film, Settings, Download, Play, Pause, RotateCcw, Eye } from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
@@ -84,6 +85,13 @@
 	function handleTimeUpdate() {
 		if (videoElement) {
 			currentTime = videoElement.currentTime;
+		}
+	}
+
+	function seekTo(time: number) {
+		if (videoElement) {
+			videoElement.currentTime = time;
+			currentTime = time;
 		}
 	}
 
@@ -201,7 +209,7 @@
 		if (!resultUrl || !videoFile) return;
 		const a = document.createElement('a');
 		a.href = resultUrl;
-		a.download = videoFile.name.replace(/\.[^/.]+$/, '') + `.${outputFormat}`;
+		a.download = videoFile.name.replace(/\.[^/.]+$/, '') + '.gif';
 		a.click();
 	}
 </script>
@@ -275,47 +283,15 @@
 							</button>
 						</div>
 
-						<!-- Timeline -->
+						<!-- Timeline Scrubber -->
 						<div class="mt-4">
-							<div class="flex items-center gap-3 text-sm text-surface-400 mb-2">
-								<span>{formatTime(currentTime)}</span>
-								<div class="flex-1 h-2 bg-surface-800 rounded-full overflow-hidden">
-									<div 
-										class="h-full bg-gradient-to-r from-accent-start to-accent-end transition-all"
-										style="width: {(currentTime / duration) * 100}%"
-									></div>
-								</div>
-								<span>{formatTime(duration)}</span>
-							</div>
-
-							<!-- Trim controls -->
-							<div class="flex items-center gap-4 text-sm">
-								<label class="flex items-center gap-2">
-									<span class="text-surface-500">Start:</span>
-									<input
-										type="number"
-										bind:value={startTime}
-										min="0"
-										max={endTime}
-										step="0.1"
-										class="w-20 rounded-lg bg-surface-800 px-3 py-1.5 text-surface-100"
-									/>
-								</label>
-								<label class="flex items-center gap-2">
-									<span class="text-surface-500">End:</span>
-									<input
-										type="number"
-										bind:value={endTime}
-										min={startTime}
-										max={duration}
-										step="0.1"
-										class="w-20 rounded-lg bg-surface-800 px-3 py-1.5 text-surface-100"
-									/>
-								</label>
-								<span class="text-surface-600">
-									Duration: {formatTime(endTime - startTime)}
-								</span>
-							</div>
+							<TimelineSlider
+								{duration}
+								bind:startTime
+								bind:endTime
+								{currentTime}
+								onseek={seekTo}
+							/>
 						</div>
 
 						<!-- File info -->
@@ -405,7 +381,7 @@
 									{progressStage} ({progress}%)
 								{:else}
 									<Film class="h-5 w-5" />
-									Convert to {outputFormat.toUpperCase()}
+									Convert to GIF
 								{/if}
 							</button>
 
