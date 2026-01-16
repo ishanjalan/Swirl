@@ -5,7 +5,7 @@
 export * from './components/Toast.svelte';
 
 // Utilities
-export * from './utils/worker-pool';
+export * from './utils/gifsicle';
 export * from './utils/webcodecs';
 
 // Stores

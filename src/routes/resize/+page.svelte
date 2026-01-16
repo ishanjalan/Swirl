@@ -5,11 +5,11 @@
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import BatchSummary from '$lib/components/BatchSummary.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Scaling, Settings, Download, Trash2, Eye, Loader2, Lock, Unlock, Clock, Film, RefreshCw } from 'lucide-svelte';
+	import { Scaling, Settings, Download, Trash2, Eye, Loader2, Lock, Unlock, Clock, Film, RefreshCw, Copy, Check } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
-	import { processGif, initPool } from '$lib/utils/worker-pool';
+	import { resizeGif } from '$lib/utils/gifsicle';
 	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
-	import { downloadAllAsZip, downloadBlob } from '$lib/utils/download';
+	import { downloadAllAsZip, downloadBlob, copyBlobToClipboard, isClipboardWriteSupported } from '$lib/utils/download';
 
 	interface GifFile {
 		id: string;
@@ -29,6 +29,7 @@
 
 	let files = $state<GifFile[]>([]);
 	let isProcessing = $state(false);
+	let copiedFileId = $state<string | null>(null);
 
 	// Size presets
 	const sizePresets = [
@@ -129,9 +130,6 @@
 		
 		isProcessing = true;
 		
-		// Initialize worker pool
-		await initPool();
-		
 		const pendingFiles = files.filter(f => f.status === 'pending' || f.status === 'error');
 		
 		for (const gifFile of pendingFiles) {
@@ -158,9 +156,7 @@
 					}
 				}
 				
-				const { result, stats } = await processGif(
-					gifFile.id,
-					'resize',
+				const { result, stats } = await resizeGif(
 					buffer,
 					{
 						width: finalWidth,
@@ -233,6 +229,18 @@
 		downloadBlob(gifFile.compressedBlob, gifFile.file.name.replace('.gif', `-${targetWidth}x${targetHeight}.gif`));
 	}
 
+	async function copyFile(gifFile: GifFile) {
+		if (!gifFile.compressedBlob) return;
+		const success = await copyBlobToClipboard(gifFile.compressedBlob);
+		if (success) {
+			copiedFileId = gifFile.id;
+			toast.success('Copied to clipboard!');
+			setTimeout(() => { copiedFileId = null; }, 2000);
+		} else {
+			toast.error('Copy not supported in this browser');
+		}
+	}
+
 	async function downloadAll() {
 		const completed = files.filter(f => f.status === 'completed' && f.compressedBlob);
 		if (completed.length === 0) return;
@@ -290,10 +298,10 @@
 			<div class="grid gap-6 lg:grid-cols-2">
 				<!-- Left: Drop zone and file list -->
 				<div>
-					<DropZone 
-						accept=".gif,image/gif"
-						acceptLabel="GIF files only"
-						onfiles={handleFiles}
+				<DropZone 
+					accept=".gif,image/gif"
+					acceptLabel="GIF files only"
+					onfiles={handleFiles}
 						compact={files.length > 0}
 					/>
 
@@ -368,6 +376,19 @@
 											>
 												<Eye class="h-4 w-4" />
 											</button>
+											{#if isClipboardWriteSupported()}
+												<button
+													onclick={() => copyFile(gifFile)}
+													class="p-2 text-surface-400 hover:text-surface-200 transition-colors"
+													title="Copy to clipboard"
+												>
+													{#if copiedFileId === gifFile.id}
+														<Check class="h-4 w-4 text-green-400" />
+													{:else}
+														<Copy class="h-4 w-4" />
+													{/if}
+												</button>
+											{/if}
 											<button
 												onclick={() => downloadFile(gifFile)}
 												class="p-2 text-green-400 hover:text-green-300 transition-colors"
@@ -399,7 +420,7 @@
 							{/if}
 						</div>
 					{/if}
-				</div>
+					</div>
 
 				<!-- Right: Settings -->
 				<div class="glass rounded-2xl p-6" in:fly={{ y: 20, delay: 100, duration: 200 }}>
@@ -408,12 +429,12 @@
 						Resize Settings
 					</h3>
 
-					<!-- Size Presets -->
-					<div class="mb-6">
+						<!-- Size Presets -->
+						<div class="mb-6">
 						<label class="block text-sm font-medium text-surface-300 mb-3">Size Presets</label>
 						<div class="grid grid-cols-2 gap-2">
-							{#each sizePresets as preset}
-								<button
+								{#each sizePresets as preset}
+									<button
 									onclick={() => selectPreset(preset.id)}
 									class="flex items-center gap-2 rounded-xl px-4 py-3 text-left transition-all {selectedPreset === preset.id
 										? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/50 text-surface-100'
@@ -428,57 +449,57 @@
 											<p class="text-xs text-surface-500">Enter size below</p>
 										{/if}
 									</div>
-								</button>
-							{/each}
+									</button>
+								{/each}
+							</div>
 						</div>
-					</div>
 
 					<!-- Custom Dimensions -->
-					<div class="mb-6">
-						<label class="block text-sm font-medium text-surface-300 mb-2">Dimensions</label>
-						<div class="flex items-center gap-3">
-							<div class="flex-1">
+						<div class="mb-6">
+							<label class="block text-sm font-medium text-surface-300 mb-2">Dimensions</label>
+							<div class="flex items-center gap-3">
+								<div class="flex-1">
 								<label class="text-xs text-surface-500 mb-1 block">Width</label>
-								<input
-									type="number"
+									<input
+										type="number"
 									bind:value={targetWidth}
 									min="16"
 									max="2048"
-									class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100"
+										class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100"
 									oninput={() => selectedPreset = 'custom'}
-								/>
-							</div>
-							<button
+									/>
+								</div>
+								<button
 								onclick={() => maintainAspectRatio = !maintainAspectRatio}
 								class="mt-5 p-2 rounded-lg transition-colors {maintainAspectRatio ? 'bg-cyan-500/20 text-cyan-400' : 'bg-surface-800 text-surface-500'}"
 								title={maintainAspectRatio ? 'Aspect ratio locked' : 'Aspect ratio unlocked'}
 							>
 								{#if maintainAspectRatio}
-									<Lock class="h-5 w-5" />
-								{:else}
-									<Unlock class="h-5 w-5" />
-								{/if}
-							</button>
-							<div class="flex-1">
+										<Lock class="h-5 w-5" />
+									{:else}
+										<Unlock class="h-5 w-5" />
+									{/if}
+								</button>
+								<div class="flex-1">
 								<label class="text-xs text-surface-500 mb-1 block">Height</label>
-								<input
-									type="number"
+									<input
+										type="number"
 									bind:value={targetHeight}
 									min="16"
 									max="2048"
 									disabled={maintainAspectRatio}
 									class="w-full rounded-lg bg-surface-800 px-3 py-2 text-surface-100 disabled:opacity-50"
 									oninput={() => selectedPreset = 'custom'}
-								/>
+									/>
+								</div>
 							</div>
-						</div>
 						{#if maintainAspectRatio}
 							<p class="text-xs text-surface-500 mt-2">Height will be calculated automatically to maintain aspect ratio</p>
 						{/if}
-					</div>
+						</div>
 
 					<!-- Optimize after resize -->
-					<div class="mb-6">
+						<div class="mb-6">
 						<label class="flex items-center gap-3 cursor-pointer">
 							<input
 								type="checkbox"
@@ -508,7 +529,7 @@
 						</div>
 					{/if}
 
-					<!-- Resize Button -->
+						<!-- Resize Button -->
 					<div class="flex gap-2">
 						<button
 							onclick={handleResize}

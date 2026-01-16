@@ -5,11 +5,13 @@
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import BatchSummary from '$lib/components/BatchSummary.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Gauge, Settings, Download, Trash2, Eye, Loader2, CheckCircle, AlertCircle, Clock, Film, Maximize2, RefreshCw } from 'lucide-svelte';
+	import { Gauge, Settings, Download, Trash2, Eye, Loader2, CheckCircle, AlertCircle, Clock, Film, Maximize2, RefreshCw, ChevronDown, Copy, Check } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
-	import { processGif, initPool } from '$lib/utils/worker-pool';
+	import { optimizeGif } from '$lib/utils/gifsicle';
 	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
-	import { downloadAllAsZip, downloadBlob } from '$lib/utils/download';
+	import { downloadAllAsZip, downloadBlob, copyBlobToClipboard, isClipboardWriteSupported } from '$lib/utils/download';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
 	interface GifFile {
 		id: string;
@@ -27,21 +29,23 @@
 
 	let files = $state<GifFile[]>([]);
 	let isProcessing = $state(false);
+	let copiedFileId = $state<string | null>(null);
 
 	// Size presets
 	const sizePresets = [
-		{ id: 'discord', label: 'Discord', size: 10, icon: '💬' },
-		{ id: 'discord-nitro', label: 'Discord Nitro', size: 50, icon: '✨' },
-		{ id: 'twitter', label: 'Twitter/X', size: 15, icon: '𝕏' },
 		{ id: 'slack', label: 'Slack', size: 1, icon: '💼' },
 		{ id: 'email', label: 'Email', size: 2, icon: '📧' },
-		{ id: 'whatsapp', label: 'WhatsApp', size: 16, icon: '📱' }
+		{ id: 'discord', label: 'Discord', size: 10, icon: '💬' },
+		{ id: 'twitter', label: 'Twitter/X', size: 15, icon: '𝕏' },
+		{ id: 'whatsapp', label: 'WhatsApp', size: 16, icon: '📱' },
+		{ id: 'large', label: 'Large', size: 25, icon: '🎬' }
 	];
 
 	let selectedPreset = $state<string | null>('discord');
 	let targetSizeMB = $state(10);
 	let colorReduction = $state(256);
 	let lossy = $state(80);
+	let showAdvanced = $state(false);
 
 	// Comparison modal
 	let showComparison = $state(false);
@@ -49,6 +53,18 @@
 
 	// Batch summary modal
 	let showBatchSummary = $state(false);
+
+	// Handle URL preset parameter
+	onMount(() => {
+		const presetParam = $page.url.searchParams.get('preset');
+		if (presetParam) {
+			const preset = sizePresets.find(p => p.id === presetParam);
+			if (preset) {
+				selectedPreset = preset.id;
+				targetSizeMB = preset.size;
+			}
+		}
+	});
 
 	function generateId(): string {
 		return `gif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -113,9 +129,6 @@
 		
 		isProcessing = true;
 		
-		// Initialize worker pool
-		await initPool();
-		
 		const pendingFiles = files.filter(f => f.status === 'pending' || f.status === 'error');
 		
 		for (const gifFile of pendingFiles) {
@@ -126,9 +139,7 @@
 			try {
 				const buffer = await gifFile.file.arrayBuffer();
 				
-				const { result, stats } = await processGif(
-					gifFile.id,
-					'optimize',
+				const { result, stats } = await optimizeGif(
 					buffer,
 					{
 						targetSizeKB: targetSizeMB * 1024,
@@ -203,6 +214,18 @@
 	function downloadFile(gifFile: GifFile) {
 		if (!gifFile.compressedBlob) return;
 		downloadBlob(gifFile.compressedBlob, gifFile.file.name.replace('.gif', '-optimized.gif'));
+	}
+
+	async function copyFile(gifFile: GifFile) {
+		if (!gifFile.compressedBlob) return;
+		const success = await copyBlobToClipboard(gifFile.compressedBlob);
+		if (success) {
+			copiedFileId = gifFile.id;
+			toast.success('Copied to clipboard!');
+			setTimeout(() => { copiedFileId = null; }, 2000);
+		} else {
+			toast.error('Copy not supported in this browser');
+		}
 	}
 
 	async function downloadAll() {
@@ -346,6 +369,19 @@
 											>
 												<Eye class="h-4 w-4" />
 											</button>
+											{#if isClipboardWriteSupported()}
+												<button
+													onclick={() => copyFile(gifFile)}
+													class="p-2 text-surface-400 hover:text-surface-200 transition-colors"
+													title="Copy to clipboard"
+												>
+													{#if copiedFileId === gifFile.id}
+														<Check class="h-4 w-4 text-green-400" />
+													{:else}
+														<Copy class="h-4 w-4" />
+													{/if}
+												</button>
+											{/if}
 											<button
 												onclick={() => downloadFile(gifFile)}
 												class="p-2 text-green-400 hover:text-green-300 transition-colors"
@@ -432,49 +468,68 @@
 							type="range"
 							bind:value={targetSizeMB}
 							min="0.5"
-							max="100"
+							max="25"
 							step="0.5"
 							class="w-full accent-accent-start"
 							oninput={() => selectedPreset = null}
 						/>
-					</div>
-
-					<!-- Color Reduction -->
-					<div class="mb-6">
-						<label class="block text-sm font-medium text-surface-300 mb-2">
-							Colors: <span class="text-accent-start">{colorReduction}</span>
-						</label>
-						<input
-							type="range"
-							bind:value={colorReduction}
-							min="16"
-							max="256"
-							step="16"
-							class="w-full accent-accent-start"
-						/>
 						<div class="flex justify-between text-xs text-surface-500 mt-1">
-							<span>16 (smaller)</span>
-							<span>256 (better)</span>
+							<span>0.5 MB</span>
+							<span>25 MB</span>
 						</div>
 					</div>
 
-					<!-- Lossy Level -->
+					<!-- Advanced Settings Accordion -->
 					<div class="mb-6">
-						<label class="block text-sm font-medium text-surface-300 mb-2">
-							Compression: <span class="text-accent-start">{lossy}</span>
-						</label>
-						<input
-							type="range"
-							bind:value={lossy}
-							min="0"
-							max="200"
-							step="10"
-							class="w-full accent-accent-start"
-						/>
-						<div class="flex justify-between text-xs text-surface-500 mt-1">
-							<span>0 (lossless)</span>
-							<span>200 (max compression)</span>
-						</div>
+						<button
+							onclick={() => showAdvanced = !showAdvanced}
+							class="w-full flex items-center justify-between rounded-xl bg-surface-800 px-4 py-3 text-sm font-medium text-surface-300 hover:bg-surface-700 transition-colors"
+						>
+							<span>Advanced Settings</span>
+							<ChevronDown class="h-4 w-4 transition-transform {showAdvanced ? 'rotate-180' : ''}" />
+						</button>
+						
+						{#if showAdvanced}
+							<div class="mt-3 space-y-4 p-4 rounded-xl bg-surface-800/50" transition:slide={{ duration: 200 }}>
+								<!-- Color Reduction -->
+								<div>
+									<label class="block text-sm font-medium text-surface-300 mb-2">
+										Colors: <span class="text-accent-start">{colorReduction}</span>
+									</label>
+									<input
+										type="range"
+										bind:value={colorReduction}
+										min="16"
+										max="256"
+										step="16"
+										class="w-full accent-accent-start"
+									/>
+									<div class="flex justify-between text-xs text-surface-500 mt-1">
+										<span>16 (smaller)</span>
+										<span>256 (better quality)</span>
+									</div>
+								</div>
+
+								<!-- Lossy Level -->
+								<div>
+									<label class="block text-sm font-medium text-surface-300 mb-2">
+										Lossy Compression: <span class="text-accent-start">{lossy}</span>
+									</label>
+									<input
+										type="range"
+										bind:value={lossy}
+										min="0"
+										max="200"
+										step="10"
+										class="w-full accent-accent-start"
+									/>
+									<div class="flex justify-between text-xs text-surface-500 mt-1">
+										<span>0 (lossless)</span>
+										<span>200 (aggressive)</span>
+									</div>
+								</div>
+							</div>
+						{/if}
 					</div>
 
 					<!-- Optimize Button -->

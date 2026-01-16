@@ -5,11 +5,11 @@
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import BatchSummary from '$lib/components/BatchSummary.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Gauge, Settings, Download, Trash2, Loader2, Play, Rewind, ArrowLeftRight, Clock, Film, Maximize2, RefreshCw, Eye } from 'lucide-svelte';
+	import { Gauge, Settings, Download, Trash2, Loader2, Play, Rewind, ArrowLeftRight, Clock, Film, Maximize2, RefreshCw, Eye, Copy, Check } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
-	import { processGif, initPool } from '$lib/utils/worker-pool';
+	import { changeGifSpeed, reverseGif } from '$lib/utils/gifsicle';
 	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
-	import { downloadAllAsZip, downloadBlob } from '$lib/utils/download';
+	import { downloadAllAsZip, downloadBlob, copyBlobToClipboard, isClipboardWriteSupported } from '$lib/utils/download';
 
 	interface GifFile {
 		id: string;
@@ -27,6 +27,7 @@
 
 	let files = $state<GifFile[]>([]);
 	let isProcessing = $state(false);
+	let copiedFileId = $state<string | null>(null);
 
 	// Speed presets
 	const speedPresets = [
@@ -113,9 +114,6 @@
 		
 		isProcessing = true;
 		
-		// Initialize worker pool
-		await initPool();
-		
 		const pendingFiles = files.filter(f => f.status === 'pending' || f.status === 'error');
 		
 		for (const gifFile of pendingFiles) {
@@ -126,12 +124,10 @@
 			try {
 				const buffer = await gifFile.file.arrayBuffer();
 				
-				// Determine processing type
-				const jobType = (reverse || boomerang) ? 'reverse' : 'speed';
+				// Determine which function to use
+				const processFn = (reverse || boomerang) ? reverseGif : changeGifSpeed;
 				
-				const { result, stats } = await processGif(
-					gifFile.id,
-					jobType as 'speed' | 'reverse',
+				const { result, stats } = await processFn(
 					buffer,
 					{
 						speedMultiplier,
@@ -215,6 +211,18 @@
 		downloadBlob(gifFile.compressedBlob, gifFile.file.name.replace('.gif', `${suffix}.gif`));
 	}
 
+	async function copyFile(gifFile: GifFile) {
+		if (!gifFile.compressedBlob) return;
+		const success = await copyBlobToClipboard(gifFile.compressedBlob);
+		if (success) {
+			copiedFileId = gifFile.id;
+			toast.success('Copied to clipboard!');
+			setTimeout(() => { copiedFileId = null; }, 2000);
+		} else {
+			toast.error('Copy not supported in this browser');
+		}
+	}
+
 	async function downloadAll() {
 		const completed = files.filter(f => f.status === 'completed' && f.compressedBlob);
 		if (completed.length === 0) return;
@@ -277,10 +285,10 @@
 			<div class="grid gap-6 lg:grid-cols-2">
 				<!-- Left: Drop zone and file list -->
 				<div>
-					<DropZone 
-						accept=".gif,image/gif"
-						acceptLabel="GIF files only"
-						onfiles={handleFiles}
+				<DropZone 
+					accept=".gif,image/gif"
+					acceptLabel="GIF files only"
+					onfiles={handleFiles}
 						compact={files.length > 0}
 					/>
 
@@ -342,11 +350,11 @@
 														class="h-full bg-gradient-to-r from-orange-400 to-red-500 transition-all"
 														style="width: {gifFile.progress}%"
 													></div>
-												</div>
+						</div>
 											{/if}
-										</div>
-									</div>
-									
+						</div>
+					</div>
+
 									<div class="flex items-center gap-1 ml-2">
 										{#if gifFile.status === 'processing'}
 											<Loader2 class="h-5 w-5 text-orange-400 animate-spin" />
@@ -358,6 +366,19 @@
 											>
 												<Eye class="h-4 w-4" />
 											</button>
+											{#if isClipboardWriteSupported()}
+												<button
+													onclick={() => copyFile(gifFile)}
+													class="p-2 text-surface-400 hover:text-surface-200 transition-colors"
+													title="Copy to clipboard"
+												>
+													{#if copiedFileId === gifFile.id}
+														<Check class="h-4 w-4 text-green-400" />
+													{:else}
+														<Copy class="h-4 w-4" />
+													{/if}
+												</button>
+											{/if}
 											<button
 												onclick={() => downloadFile(gifFile)}
 												class="p-2 text-green-400 hover:text-green-300 transition-colors"
@@ -398,45 +419,46 @@
 						Speed Settings
 					</h3>
 
-					<!-- Speed Presets -->
-					<div class="mb-6">
-						<label class="block text-sm font-medium text-surface-300 mb-3">Speed Multiplier</label>
-						<div class="grid grid-cols-3 gap-2">
-							{#each speedPresets as preset}
-								<button
-									onclick={() => selectPreset(preset.id)}
-									disabled={reverse || boomerang}
-									class="flex flex-col items-center gap-1 rounded-xl px-4 py-3 transition-all disabled:opacity-50 {selectedPreset === preset.id && !reverse && !boomerang
-										? 'bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-500/50 text-surface-100'
-										: 'bg-surface-800 text-surface-400 hover:bg-surface-700'}"
-								>
-									<span class="text-lg">{preset.icon}</span>
-									<span class="text-sm font-medium">{preset.label}</span>
-								</button>
-							{/each}
+					<!-- Speed Controls (hidden when effect is selected) -->
+					{#if !reverse && !boomerang}
+						<!-- Speed Presets -->
+						<div class="mb-6" transition:slide={{ duration: 200 }}>
+							<label class="block text-sm font-medium text-surface-300 mb-3">Speed Multiplier</label>
+							<div class="grid grid-cols-3 gap-2">
+								{#each speedPresets as preset}
+									<button
+										onclick={() => selectPreset(preset.id)}
+										class="flex flex-col items-center gap-1 rounded-xl px-4 py-3 transition-all {selectedPreset === preset.id
+											? 'bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-500/50 text-surface-100'
+											: 'bg-surface-800 text-surface-400 hover:bg-surface-700'}"
+									>
+										<span class="text-lg">{preset.icon}</span>
+										<span class="text-sm font-medium">{preset.label}</span>
+									</button>
+								{/each}
+							</div>
 						</div>
-					</div>
 
-					<!-- Custom Speed -->
-					<div class="mb-6">
-						<label class="block text-sm font-medium text-surface-300 mb-2">
-							Custom Speed: <span class="text-orange-400">{speedMultiplier}×</span>
-						</label>
-						<input
-							type="range"
-							bind:value={speedMultiplier}
-							min="0.1"
-							max="5"
-							step="0.1"
-							disabled={reverse || boomerang}
-							class="w-full accent-orange-400 disabled:opacity-50"
-							oninput={() => selectedPreset = ''}
-						/>
-						<div class="flex justify-between text-xs text-surface-500 mt-1">
-							<span>0.1× (slow motion)</span>
-							<span>5× (super fast)</span>
+						<!-- Custom Speed -->
+						<div class="mb-6" transition:slide={{ duration: 200 }}>
+							<label class="block text-sm font-medium text-surface-300 mb-2">
+								Custom Speed: <span class="text-orange-400">{speedMultiplier}×</span>
+							</label>
+							<input
+								type="range"
+								bind:value={speedMultiplier}
+								min="0.1"
+								max="5"
+								step="0.1"
+								class="w-full accent-orange-400"
+								oninput={() => selectedPreset = ''}
+							/>
+							<div class="flex justify-between text-xs text-surface-500 mt-1">
+								<span>0.1× (slow motion)</span>
+								<span>5× (super fast)</span>
+							</div>
 						</div>
-					</div>
+					{/if}
 
 					<!-- Special Effects -->
 					<div class="mb-6 space-y-3">
@@ -485,13 +507,13 @@
 							disabled={files.length === 0 || isProcessing}
 							class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-orange-500/30 transition-all hover:shadow-xl hover:shadow-orange-500/40 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-						{#if isProcessing}
+							{#if isProcessing}
 							<Loader2 class="h-5 w-5 animate-spin" />
-							Processing...
-						{:else}
+								Processing...
+							{:else}
 							<Play class="h-5 w-5" />
 							Process {files.length} GIF{files.length !== 1 ? 's' : ''}
-						{/if}
+							{/if}
 						</button>
 						
 						{#if completedCount > 0}

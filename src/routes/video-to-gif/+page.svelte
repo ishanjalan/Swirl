@@ -5,11 +5,13 @@
 	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
 	import TimelineSlider from '$lib/components/TimelineSlider.svelte';
-	import { Film, Settings, Download, Play, Pause, RotateCcw, Eye } from 'lucide-svelte';
+	import { Film, Settings, Download, Play, Pause, RotateCcw, Eye, Copy, Check, RefreshCw } from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
-	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
-	import { extractFramesFromVideo, checkBrowserSupport, getVideoMetadata } from '$lib/utils/webcodecs';
-	import { formatBytes } from '$lib/utils/gif-parser';
+	import encode from 'gifski-wasm';
+	import { extractFramesFromVideo, checkBrowserSupport } from '$lib/utils/webcodecs';
+import { formatBytes } from '$lib/utils/gif-parser';
+import { optimizeGif } from '$lib/utils/gifsicle';
+import { copyBlobToClipboard, isClipboardWriteSupported } from '$lib/utils/download';
 
 	// State
 	let videoFile = $state<File | null>(null);
@@ -27,17 +29,31 @@
 	let quality = $state(80);
 	let startTime = $state(0);
 	let endTime = $state(0);
+	
+	// Optimization
+	let optimizeOutput = $state(false);
+	let lossyLevel = $state(80);
 
 	// Processing
 	let isProcessing = $state(false);
 	let progress = $state(0);
 	let progressStage = $state('');
 	let resultUrl = $state<string | null>(null);
+	let resultBlob = $state<Blob | null>(null);
 	let resultSize = $state(0);
 	let processingTime = $state(0);
+	let justCopied = $state(false);
 
 	// Comparison modal
 	let showComparison = $state(false);
+
+	// Derived estimates
+	const clipDuration = $derived(endTime - startTime);
+	const estimatedFrames = $derived(Math.ceil(clipDuration * fps));
+	const estimatedHeight = $derived(videoWidth > 0 ? Math.round(width * (videoHeight / videoWidth)) : 0);
+	// Rough GIF size estimate: frames * width * height * 0.05 bytes (very rough, depends on content)
+	const estimatedSizeBytes = $derived(estimatedFrames * width * estimatedHeight * 0.05);
+	const estimatedSizeStr = $derived(estimatedSizeBytes > 0 ? formatBytes(estimatedSizeBytes) : '—');
 
 	function handleFiles(files: File[]) {
 		const videoFiles = files.filter(f => f.type.startsWith('video/'));
@@ -118,11 +134,6 @@
 			const aspectRatio = videoHeight / videoWidth;
 			const targetHeight = Math.round(width * aspectRatio);
 			
-			// Calculate frame times
-			const clipDuration = endTime - startTime;
-			const frameDelay = 1000 / fps;
-			const totalFrames = Math.floor(clipDuration * fps);
-			
 			progressStage = 'Extracting frames...';
 			
 			// Extract frames using WebCodecs-enhanced extraction
@@ -136,42 +147,45 @@
 					height: targetHeight
 				},
 				(frameProgress) => {
-					progress = Math.round(frameProgress.progress * 0.6); // 0-60% for extraction
+					progress = Math.round(frameProgress.progress * 0.5); // 0-50% for extraction
 					progressStage = `Extracting frame ${frameProgress.currentFrame}/${frameProgress.totalFrames}`;
 				}
 			);
 
-			progressStage = 'Encoding GIF...';
+			progressStage = 'Encoding GIF with gifski...';
+			progress = 55;
 
-			// Create GIF encoder
-			const gif = GIFEncoder();
+			// Use gifski-wasm for high-quality GIF encoding
+			// gifski expects ImageData frames or Uint8Array RGBA data
+			const gifBuffer = await encode({
+				frames,
+				width,
+				height: targetHeight,
+				fps,
+				quality // gifski quality 1-100
+			});
 			
-			// Encode frames
-			for (let i = 0; i < frames.length; i++) {
-				const imageData = frames[i];
+			let finalBuffer = gifBuffer;
+			
+			// Optimize if enabled
+			if (optimizeOutput) {
+				progressStage = 'Optimizing GIF...';
+				progress = 85;
 				
-				// Quantize based on quality (higher quality = more colors)
-				const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
-				const palette = quantize(imageData.data, maxColors);
-				const index = applyPalette(imageData.data, palette);
-				
-				gif.writeFrame(index, imageData.width, imageData.height, { 
-					palette, 
-					delay: Math.round(frameDelay)
-				});
-				
-				progress = 60 + Math.round(((i + 1) / frames.length) * 35); // 60-95%
-				progressStage = `Encoding frame ${i + 1}/${frames.length}`;
+				const { result } = await optimizeGif(
+					gifBuffer.buffer,
+					{ lossy: lossyLevel, colors: 256 },
+					(p) => { progress = 85 + Math.round(p * 0.1); }
+				);
+				finalBuffer = new Uint8Array(result);
 			}
-			
-			gif.finish();
 			
 			progressStage = 'Finalizing...';
 			progress = 98;
 			
 			// Create blob and URL
-			const bytes = gif.bytes();
-			const blob = new Blob([bytes], { type: 'image/gif' });
+			const blob = new Blob([finalBuffer], { type: 'image/gif' });
+			resultBlob = blob;
 			resultUrl = URL.createObjectURL(blob);
 			resultSize = blob.size;
 			
@@ -211,6 +225,27 @@
 		a.href = resultUrl;
 		a.download = videoFile.name.replace(/\.[^/.]+$/, '') + '.gif';
 		a.click();
+	}
+
+	async function copyResult() {
+		if (!resultBlob) return;
+		const success = await copyBlobToClipboard(resultBlob);
+		if (success) {
+			justCopied = true;
+			toast.success('Copied to clipboard!');
+			setTimeout(() => { justCopied = false; }, 2000);
+		} else {
+			toast.error('Copy not supported in this browser');
+		}
+	}
+
+	function resetResult() {
+		if (resultUrl) URL.revokeObjectURL(resultUrl);
+		resultUrl = null;
+		resultBlob = null;
+		resultSize = 0;
+		progress = 0;
+		progressStage = '';
 	}
 </script>
 
@@ -370,6 +405,61 @@
 								</div>
 							</div>
 
+							<!-- Optimize Output -->
+							<div class="p-4 rounded-xl bg-surface-800/50 space-y-3">
+								<label class="flex items-center gap-3 cursor-pointer">
+									<input
+										type="checkbox"
+										bind:checked={optimizeOutput}
+										class="w-5 h-5 rounded bg-surface-700 border-surface-600 text-accent-start focus:ring-accent-start"
+									/>
+									<div>
+										<span class="text-sm font-medium text-surface-200">Optimize output</span>
+										<p class="text-xs text-surface-500">Compress GIF further after creation</p>
+									</div>
+								</label>
+								
+								{#if optimizeOutput}
+									<div class="pt-2 border-t border-surface-700">
+										<label class="block text-sm font-medium text-surface-300 mb-2">
+											Compression: <span class="text-accent-start">{lossyLevel}</span>
+										</label>
+										<input
+											type="range"
+											bind:value={lossyLevel}
+											min="0"
+											max="200"
+											class="w-full accent-accent-start"
+										/>
+										<div class="flex justify-between text-xs text-surface-500 mt-1">
+											<span>Lossless</span>
+											<span>Maximum compression</span>
+										</div>
+									</div>
+								{/if}
+							</div>
+
+							<!-- Estimate Preview -->
+							{#if videoFile && clipDuration > 0}
+								<div class="p-4 rounded-xl bg-surface-800/50 border border-surface-700">
+									<p class="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">Estimated Output</p>
+									<div class="grid grid-cols-3 gap-3 text-center">
+										<div>
+											<p class="text-lg font-semibold text-surface-100">{width}×{estimatedHeight}</p>
+											<p class="text-xs text-surface-500">Dimensions</p>
+										</div>
+										<div>
+											<p class="text-lg font-semibold text-surface-100">{estimatedFrames}</p>
+											<p class="text-xs text-surface-500">Frames</p>
+										</div>
+										<div>
+											<p class="text-lg font-semibold text-accent-start">~{estimatedSizeStr}</p>
+											<p class="text-xs text-surface-500">Est. Size</p>
+										</div>
+									</div>
+								</div>
+							{/if}
+
 							<!-- Convert Button -->
 							<button
 								onclick={handleConvert}
@@ -422,12 +512,32 @@
 											<Download class="h-4 w-4" />
 											Download
 										</button>
+										{#if isClipboardWriteSupported()}
+											<button
+												onclick={copyResult}
+												class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+												title="Copy to clipboard"
+											>
+												{#if justCopied}
+													<Check class="h-4 w-4 text-green-400" />
+												{:else}
+													<Copy class="h-4 w-4" />
+												{/if}
+											</button>
+										{/if}
 										<button
 											onclick={() => showComparison = true}
 											class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+											title="Compare"
 										>
 											<Eye class="h-4 w-4" />
-											Compare
+										</button>
+										<button
+											onclick={resetResult}
+											class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+											title="Try again with different settings"
+										>
+											<RefreshCw class="h-4 w-4" />
 										</button>
 									</div>
 								</div>

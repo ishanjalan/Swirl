@@ -156,7 +156,7 @@
 					{/each}
 				</div>
 				<p class="mt-5 text-sm text-surface-400">
-					{acceptLabel} • Unlimited file size • Batch upload supported
+					{acceptLabel} • Large files supported • Batch upload
 				</p>
 			</div>
 		</div>

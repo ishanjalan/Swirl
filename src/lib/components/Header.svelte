@@ -1,22 +1,47 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
-	import { Github, Disc3, WifiOff } from 'lucide-svelte';
+	import { Github, Disc3, WifiOff, Menu, X } from 'lucide-svelte';
 	import { onMount } from 'svelte';
-	import { fade } from 'svelte/transition';
+	import { fade, fly } from 'svelte/transition';
 
 	let isOnline = $state(true);
 	let showOfflineToast = $state(false);
+	let mobileMenuOpen = $state(false);
 
-	const navLinks = [
-		{ href: '/video-to-gif', label: 'Video to GIF' },
-		{ href: '/make', label: 'GIF Maker' },
-		{ href: '/optimize', label: 'Optimize' },
-		{ href: '/combine', label: 'Combine' },
-		{ href: '/resize', label: 'Resize' },
-		{ href: '/speed', label: 'Speed' },
-		{ href: '/split', label: 'Split' }
+	// Grouped navigation
+	const navGroups = [
+		{
+			label: 'Create',
+			links: [
+				{ href: '/video-to-gif', label: 'Video to GIF' },
+				{ href: '/make', label: 'GIF Maker' }
+			]
+		},
+		{
+			label: 'Edit',
+			links: [
+				{ href: '/optimize', label: 'Optimize' },
+				{ href: '/resize', label: 'Resize' },
+				{ href: '/crop', label: 'Crop' },
+				{ href: '/speed', label: 'Speed' },
+				{ href: '/combine', label: 'Combine' }
+			]
+		},
+		{
+			label: 'Extract',
+			links: [
+				{ href: '/split', label: 'Split Frames' }
+			]
+		}
 	];
+
+	// Flat list for mobile
+	const allLinks = navGroups.flatMap(g => g.links);
+
+	function closeMobileMenu() {
+		mobileMenuOpen = false;
+	}
 
 	onMount(() => {
 		isOnline = navigator.onLine;
@@ -53,6 +78,7 @@
 			<a
 				href="{base}/"
 				class="flex items-center gap-3 group"
+				onclick={closeMobileMenu}
 			>
 				<div
 					class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent-start to-accent-end shadow-lg shadow-accent-start/30 transition-transform group-hover:scale-110 group-hover:rotate-180 duration-500"
@@ -64,18 +90,23 @@
 				</span>
 			</a>
 
-			<!-- Nav links (hidden on mobile) -->
-			<div class="hidden md:flex items-center gap-1">
-				{#each navLinks as link}
-					{@const isActive = $page.url.pathname === `${base}${link.href}`}
-					<a
-						href="{base}{link.href}"
-						class="px-3 py-2 rounded-lg text-sm font-medium transition-colors {isActive 
-							? 'text-accent-start bg-accent-start/10' 
-							: 'text-surface-400 hover:text-surface-100 hover:bg-surface-800'}"
-					>
-						{link.label}
-					</a>
+			<!-- Nav links - Desktop (hidden on mobile) -->
+			<div class="hidden lg:flex items-center gap-1">
+				{#each navGroups as group, groupIndex}
+					{#each group.links as link}
+						{@const isActive = $page.url.pathname === `${base}${link.href}`}
+						<a
+							href="{base}{link.href}"
+							class="px-3 py-2 rounded-lg text-sm font-medium transition-colors {isActive 
+								? 'text-accent-start bg-accent-start/10' 
+								: 'text-surface-400 hover:text-surface-100 hover:bg-surface-800'}"
+						>
+							{link.label}
+						</a>
+					{/each}
+					{#if groupIndex < navGroups.length - 1}
+						<div class="w-px h-5 bg-surface-700 mx-1"></div>
+					{/if}
 				{/each}
 			</div>
 
@@ -102,10 +133,66 @@
 				>
 					<Github class="h-5 w-5" />
 				</a>
+
+				<!-- Mobile menu button -->
+				<button
+					onclick={() => mobileMenuOpen = !mobileMenuOpen}
+					class="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl text-surface-400 transition-all hover:bg-surface-800 hover:text-surface-100"
+					aria-label="Toggle menu"
+				>
+					{#if mobileMenuOpen}
+						<X class="h-5 w-5" />
+					{:else}
+						<Menu class="h-5 w-5" />
+					{/if}
+				</button>
 			</div>
 		</nav>
 	</div>
 </header>
+
+<!-- Mobile menu overlay -->
+{#if mobileMenuOpen}
+	<div
+		class="fixed inset-0 z-40 lg:hidden"
+		transition:fade={{ duration: 150 }}
+	>
+		<!-- Backdrop -->
+		<button
+			class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+			onclick={closeMobileMenu}
+			aria-label="Close menu"
+		></button>
+
+		<!-- Menu panel -->
+		<div
+			class="absolute top-20 right-4 left-4 sm:left-auto sm:w-72 glass rounded-2xl p-4 shadow-xl"
+			transition:fly={{ y: -10, duration: 200 }}
+		>
+			{#each navGroups as group}
+				<div class="mb-4 last:mb-0">
+					<p class="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-2 px-3">
+						{group.label}
+					</p>
+					<div class="space-y-1">
+						{#each group.links as link}
+							{@const isActive = $page.url.pathname === `${base}${link.href}`}
+							<a
+								href="{base}{link.href}"
+								onclick={closeMobileMenu}
+								class="block px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {isActive 
+									? 'text-accent-start bg-accent-start/10' 
+									: 'text-surface-300 hover:text-surface-100 hover:bg-surface-800'}"
+							>
+								{link.label}
+							</a>
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</div>
+	</div>
+{/if}
 
 <!-- Offline toast notification -->
 {#if showOfflineToast}

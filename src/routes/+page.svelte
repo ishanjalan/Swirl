@@ -13,7 +13,8 @@
 		ArrowRight,
 		Rewind,
 		Images,
-		Merge
+		Merge,
+		Crop
 	} from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
 
@@ -64,12 +65,21 @@
 			popular: false
 		},
 		{
+			id: 'crop',
+			href: '/crop',
+			title: 'Crop',
+			description: 'Crop GIFs visually with drag handles',
+			icon: Crop,
+			gradient: 'from-amber-500 to-orange-500',
+			popular: false
+		},
+		{
 			id: 'speed',
 			href: '/speed',
 			title: 'Speed & Reverse',
 			description: 'Speed up, slow down, reverse, or loop',
 			icon: Rewind,
-			gradient: 'from-amber-500 to-orange-500',
+			gradient: 'from-orange-500 to-red-500',
 			popular: false
 		},
 		{
@@ -102,10 +112,10 @@
 	];
 
 	const presets = [
-		{ name: 'Discord', size: '10MB', icon: '💬' },
-		{ name: 'Twitter', size: '15MB', icon: '𝕏' },
-		{ name: 'Slack', size: '1MB', icon: '💼' },
-		{ name: 'WhatsApp', size: '16MB', icon: '📱' }
+		{ id: 'discord', name: 'Discord', size: '10MB', icon: '💬' },
+		{ id: 'twitter', name: 'Twitter', size: '15MB', icon: '𝕏' },
+		{ id: 'slack', name: 'Slack', size: '1MB', icon: '💼' },
+		{ id: 'whatsapp', name: 'WhatsApp', size: '16MB', icon: '📱' }
 	];
 </script>
 
@@ -148,11 +158,14 @@
 				<div class="mt-6 flex flex-wrap items-center justify-center gap-2">
 					<span class="text-sm text-surface-500">One-click presets for:</span>
 					{#each presets as preset}
-						<span class="inline-flex items-center gap-1.5 rounded-full bg-surface-800 px-3 py-1 text-sm text-surface-300">
+						<a 
+							href="{base}/optimize?preset={preset.id}"
+							class="inline-flex items-center gap-1.5 rounded-full bg-surface-800 px-3 py-1 text-sm text-surface-300 hover:bg-surface-700 hover:text-surface-100 transition-colors"
+						>
 							<span>{preset.icon}</span>
 							<span>{preset.name}</span>
 							<span class="text-surface-500">{preset.size}</span>
-						</span>
+						</a>
 					{/each}
 				</div>
 			</div>
@@ -217,7 +230,7 @@
 			<div class="glass rounded-2xl p-6" in:fade={{ delay: 600, duration: 300 }}>
 				<div class="grid grid-cols-3 gap-6 text-center">
 					<div>
-						<p class="text-2xl font-bold text-surface-100">7</p>
+						<p class="text-2xl font-bold text-surface-100">8</p>
 						<p class="text-sm text-surface-500">Tools</p>
 					</div>
 					<div>

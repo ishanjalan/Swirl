@@ -2,13 +2,14 @@
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
+	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Merge, Settings, Download, Trash2, GripVertical, Loader2, Rows3, Columns3 } from 'lucide-svelte';
+	import { Merge, Settings, Download, Trash2, GripVertical, Loader2, Rows3, Columns3, Copy, Check, Eye, RefreshCw } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
-	import { processGif, initPool } from '$lib/utils/worker-pool';
+	import { mergeGifs } from '$lib/utils/gifsicle';
 	import { parseGifFile, formatDuration, formatBytes, type GifMetadata } from '$lib/utils/gif-parser';
-	import { downloadBlob } from '$lib/utils/download';
+	import { downloadBlob, copyBlobToClipboard, isClipboardWriteSupported } from '$lib/utils/download';
 
 	interface GifFile {
 		id: string;
@@ -23,7 +24,9 @@
 	let progress = $state(0);
 	let progressStage = $state('');
 	let resultUrl = $state<string | null>(null);
+	let resultBlob = $state<Blob | null>(null);
 	let resultSize = $state(0);
+	let justCopied = $state(false);
 
 	// Settings
 	type CombineMode = 'sequential' | 'horizontal' | 'vertical';
@@ -34,6 +37,9 @@
 	// Drag and drop reordering
 	let draggedFile: GifFile | null = null;
 	let dragOverIndex: number | null = null;
+
+	// Comparison modal
+	let showComparison = $state(false);
 
 	function generateId(): string {
 		return `gif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -138,9 +144,6 @@
 		}
 
 		try {
-			// Initialize worker pool
-			await initPool();
-
 			// Read all files into buffers
 			const buffers: ArrayBuffer[] = [];
 			for (let i = 0; i < files.length; i++) {
@@ -160,13 +163,11 @@
 				progressStage = `Merging GIF ${i + 1}/${files.length}...`;
 				progress = 40 + Math.round(((i) / (buffers.length - 1)) * 50);
 
-				const { result } = await processGif(
-					`merge-${i}`,
-					'merge',
+				const { result } = await mergeGifs(
 					currentBuffer,
+					buffers[i],
 					{
 						mode: combineMode,
-						secondGif: buffers[i],
 						normalizeSize,
 						outputWidth: normalizeSize ? outputWidth : undefined
 					},
@@ -181,6 +182,7 @@
 
 			// Create blob from result
 			const blob = new Blob([currentBuffer], { type: 'image/gif' });
+			resultBlob = blob;
 			resultUrl = URL.createObjectURL(blob);
 			resultSize = blob.size;
 
@@ -200,6 +202,27 @@
 		if (!resultBlob) return;
 		const modeName = combineMode === 'sequential' ? 'merged' : combineMode;
 		downloadBlob(resultBlob, `swirl-${modeName}-${Date.now()}.gif`);
+	}
+
+	async function copyResult() {
+		if (!resultBlob) return;
+		const success = await copyBlobToClipboard(resultBlob);
+		if (success) {
+			justCopied = true;
+			toast.success('Copied to clipboard!');
+			setTimeout(() => { justCopied = false; }, 2000);
+		} else {
+			toast.error('Copy not supported in this browser');
+		}
+	}
+
+	function resetResult() {
+		if (resultUrl) URL.revokeObjectURL(resultUrl);
+		resultUrl = null;
+		resultBlob = null;
+		resultSize = 0;
+		progress = 0;
+		progressStage = '';
 	}
 
 	function clearAll() {
@@ -258,13 +281,42 @@
 								<span class="text-sm text-surface-400">
 									Combined result • {formatBytes(resultSize)}
 								</span>
-								<button
-									onclick={downloadResult}
-									class="flex items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition-colors"
-								>
-									<Download class="h-4 w-4" />
-									Download
-								</button>
+								<div class="flex gap-2">
+									<button
+										onclick={downloadResult}
+										class="flex items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition-colors"
+									>
+										<Download class="h-4 w-4" />
+										Download
+									</button>
+									{#if isClipboardWriteSupported()}
+										<button
+											onclick={copyResult}
+											class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+											title="Copy to clipboard"
+										>
+											{#if justCopied}
+												<Check class="h-4 w-4 text-green-400" />
+											{:else}
+												<Copy class="h-4 w-4" />
+											{/if}
+										</button>
+									{/if}
+									<button
+										onclick={() => showComparison = true}
+										class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+										title="Compare"
+									>
+										<Eye class="h-4 w-4" />
+									</button>
+									<button
+										onclick={resetResult}
+										class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+										title="Try again with different settings"
+									>
+										<RefreshCw class="h-4 w-4" />
+									</button>
+								</div>
 							</div>
 						</div>
 					{/if}
@@ -484,3 +536,14 @@
 
 	<Footer />
 </div>
+
+<!-- Comparison Modal -->
+{#if showComparison && files.length > 0 && resultUrl}
+	<CompareSlider
+		originalUrl={files[0].url}
+		compressedUrl={resultUrl}
+		originalSize={files.reduce((sum, f) => sum + f.file.size, 0)}
+		compressedSize={resultSize}
+		onclose={() => showComparison = false}
+	/>
+{/if}

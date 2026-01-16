@@ -75,3 +75,34 @@ export function getOutputFilename(originalName: string, suffix?: string): string
 	}
 	return `${baseName}-processed${extension}`;
 }
+
+/**
+ * Copy a blob to clipboard
+ * Returns true if successful, false if not supported
+ */
+export async function copyBlobToClipboard(blob: Blob): Promise<boolean> {
+	try {
+		// Check if clipboard API is available
+		if (!navigator.clipboard || !navigator.clipboard.write) {
+			return false;
+		}
+
+		// Create a ClipboardItem with the blob
+		const clipboardItem = new ClipboardItem({
+			[blob.type]: blob
+		});
+
+		await navigator.clipboard.write([clipboardItem]);
+		return true;
+	} catch (error) {
+		console.error('Failed to copy to clipboard:', error);
+		return false;
+	}
+}
+
+/**
+ * Check if clipboard write is supported
+ */
+export function isClipboardWriteSupported(): boolean {
+	return !!(navigator.clipboard && navigator.clipboard.write);
+}

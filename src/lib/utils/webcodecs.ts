@@ -131,7 +131,7 @@ export async function extractFramesFromVideo(
 		const canvas = document.createElement('canvas');
 		canvas.width = targetWidth;
 		canvas.height = targetHeight;
-		const ctx = canvas.getContext('2d')!;
+		const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
 
 		// Calculate frame times
 		const clipDuration = options.endTime - options.startTime;

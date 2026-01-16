@@ -2,12 +2,15 @@
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
+	import CompareSlider from '$lib/components/CompareSlider.svelte';
 	import { toast } from '$lib/components/Toast.svelte';
-	import { Images, Settings, Download, Play, Pause, Trash2, GripVertical, Plus, Loader2 } from 'lucide-svelte';
+	import { Images, Settings, Download, Play, Pause, Trash2, GripVertical, Plus, Loader2, Copy, Check, Eye, RefreshCw } from 'lucide-svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
-	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
-	import { formatBytes } from '$lib/utils/gif-parser';
+	import encode from 'gifski-wasm';
+import { formatBytes } from '$lib/utils/gif-parser';
+import { optimizeGif } from '$lib/utils/gifsicle';
+import { copyBlobToClipboard, isClipboardWriteSupported } from '$lib/utils/download';
 
 	interface Frame {
 		id: string;
@@ -24,18 +27,27 @@
 	let progress = $state(0);
 	let progressStage = $state('');
 	let resultUrl = $state<string | null>(null);
+	let resultBlob = $state<Blob | null>(null);
 	let resultSize = $state(0);
+	let justCopied = $state(false);
 
 	// Settings
 	let globalDelay = $state(100); // ms
 	let loop = $state(0); // 0 = infinite
 	let outputWidth = $state(480);
 	let quality = $state(80);
+	
+	// Optimization
+	let optimizeOutput = $state(false);
+	let lossyLevel = $state(80);
 
 	// Preview
 	let isPlaying = $state(false);
 	let currentFrameIndex = $state(0);
 	let previewInterval: ReturnType<typeof setInterval> | null = null;
+
+	// Comparison modal
+	let showComparison = $state(false);
 
 	// Drag and drop reordering
 	let draggedFrame: Frame | null = null;
@@ -207,16 +219,17 @@
 			const canvas = document.createElement('canvas');
 			canvas.width = outputWidth;
 			canvas.height = outputHeight;
-			const ctx = canvas.getContext('2d')!;
+			const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
 
-			// Create GIF encoder
-			const gif = GIFEncoder();
+			// Prepare frames as ImageData for gifski
+			const frameDataList: ImageData[] = [];
+			const frameDurations: number[] = [];
 
 			// Process each frame
 			for (let i = 0; i < frames.length; i++) {
 				const frame = frames[i];
 				progressStage = `Processing frame ${i + 1}/${frames.length}`;
-				progress = Math.round(((i + 1) / frames.length) * 80);
+				progress = Math.round(((i + 1) / frames.length) * 50);
 
 				// Load and draw image
 				const img = await loadImage(frame.url);
@@ -225,27 +238,43 @@
 
 				// Get image data
 				const imageData = ctx.getImageData(0, 0, outputWidth, outputHeight);
-
-				// Quantize colors
-				const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
-				const palette = quantize(imageData.data, maxColors);
-				const index = applyPalette(imageData.data, palette);
-
-				// Write frame
-				gif.writeFrame(index, outputWidth, outputHeight, {
-					palette,
-					delay: frame.delay
-				});
+				frameDataList.push(imageData);
+				frameDurations.push(frame.delay);
 			}
 
-			progressStage = 'Finalizing GIF...';
-			progress = 90;
+			progressStage = 'Encoding GIF with gifski...';
+			progress = 55;
 
-			gif.finish();
+			// Use gifski-wasm for high-quality GIF encoding
+			const gifBuffer = await encode({
+				frames: frameDataList,
+				width: outputWidth,
+				height: outputHeight,
+				frameDurations, // Per-frame durations in ms
+				quality // gifski quality 1-100
+			});
+
+			let finalBuffer = gifBuffer;
+			
+			// Optimize if enabled
+			if (optimizeOutput) {
+				progressStage = 'Optimizing GIF...';
+				progress = 80;
+				
+				const { result } = await optimizeGif(
+					gifBuffer.buffer,
+					{ lossy: lossyLevel, colors: 256 },
+					(p) => { progress = 80 + Math.round(p * 0.15); }
+				);
+				finalBuffer = new Uint8Array(result);
+			}
+			
+			progressStage = 'Finalizing GIF...';
+			progress = 98;
 
 			// Create blob
-			const bytes = gif.bytes();
-			const blob = new Blob([bytes], { type: 'image/gif' });
+			const blob = new Blob([finalBuffer], { type: 'image/gif' });
+			resultBlob = blob;
 			resultUrl = URL.createObjectURL(blob);
 			resultSize = blob.size;
 
@@ -276,6 +305,27 @@
 		a.href = resultUrl;
 		a.download = `swirl-animation-${Date.now()}.gif`;
 		a.click();
+	}
+
+	async function copyResult() {
+		if (!resultBlob) return;
+		const success = await copyBlobToClipboard(resultBlob);
+		if (success) {
+			justCopied = true;
+			toast.success('Copied to clipboard!');
+			setTimeout(() => { justCopied = false; }, 2000);
+		} else {
+			toast.error('Copy not supported in this browser');
+		}
+	}
+
+	function resetResult() {
+		if (resultUrl) URL.revokeObjectURL(resultUrl);
+		resultUrl = null;
+		resultBlob = null;
+		resultSize = 0;
+		progress = 0;
+		progressStage = '';
 	}
 
 	function clearAll() {
@@ -528,6 +578,40 @@
 							</div>
 						</div>
 
+						<!-- Optimize Output -->
+						<div class="p-4 rounded-xl bg-surface-800/50 space-y-3">
+							<label class="flex items-center gap-3 cursor-pointer">
+								<input
+									type="checkbox"
+									bind:checked={optimizeOutput}
+									class="w-5 h-5 rounded bg-surface-700 border-surface-600 text-accent-start focus:ring-accent-start"
+								/>
+								<div>
+									<span class="text-sm font-medium text-surface-200">Optimize output</span>
+									<p class="text-xs text-surface-500">Compress GIF further after creation</p>
+								</div>
+							</label>
+							
+							{#if optimizeOutput}
+								<div class="pt-2 border-t border-surface-700">
+									<label class="block text-sm font-medium text-surface-300 mb-2">
+										Compression: <span class="text-accent-start">{lossyLevel}</span>
+									</label>
+									<input
+										type="range"
+										bind:value={lossyLevel}
+										min="0"
+										max="200"
+										class="w-full accent-accent-start"
+									/>
+									<div class="flex justify-between text-xs text-surface-500 mt-1">
+										<span>Lossless</span>
+										<span>Maximum compression</span>
+									</div>
+								</div>
+							{/if}
+						</div>
+
 						<!-- Create Button -->
 						<button
 							onclick={handleCreate}
@@ -565,13 +649,42 @@
 									</div>
 								</div>
 								
-								<button
-									onclick={downloadResult}
-									class="w-full flex items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-600 transition-colors"
-								>
-									<Download class="h-4 w-4" />
-									Download GIF
-								</button>
+								<div class="flex gap-2">
+									<button
+										onclick={downloadResult}
+										class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-600 transition-colors"
+									>
+										<Download class="h-4 w-4" />
+										Download
+									</button>
+									{#if isClipboardWriteSupported()}
+										<button
+											onclick={copyResult}
+											class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+											title="Copy to clipboard"
+										>
+											{#if justCopied}
+												<Check class="h-4 w-4 text-green-400" />
+											{:else}
+												<Copy class="h-4 w-4" />
+											{/if}
+										</button>
+									{/if}
+									<button
+										onclick={() => showComparison = true}
+										class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+										title="Compare"
+									>
+										<Eye class="h-4 w-4" />
+									</button>
+									<button
+										onclick={resetResult}
+										class="flex items-center justify-center gap-2 rounded-xl bg-surface-700 px-4 py-2.5 text-sm font-medium text-surface-200 hover:bg-surface-600 transition-colors"
+										title="Try again with different settings"
+									>
+										<RefreshCw class="h-4 w-4" />
+									</button>
+								</div>
 							</div>
 						{/if}
 					</div>
@@ -582,3 +695,14 @@
 
 	<Footer />
 </div>
+
+<!-- Comparison Modal -->
+{#if showComparison && frames.length > 0 && resultUrl}
+	<CompareSlider
+		originalUrl={frames[0].url}
+		compressedUrl={resultUrl}
+		originalSize={frames.reduce((sum, f) => sum + f.file.size, 0)}
+		compressedSize={resultSize}
+		onclose={() => showComparison = false}
+	/>
+{/if}

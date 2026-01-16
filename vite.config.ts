@@ -22,5 +22,9 @@ export default defineConfig({
 	},
 	build: {
 		target: 'esnext'
+	},
+	optimizeDeps: {
+		// Required for gifski-wasm to work properly with Vite
+		exclude: ['gifski-wasm']
 	}
 });
