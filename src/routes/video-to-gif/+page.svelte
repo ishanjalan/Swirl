@@ -5,6 +5,7 @@
 	import { toast } from '$lib/components/Toast.svelte';
 	import { Film, Settings, Download, Play, Pause, RotateCcw } from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
+	import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 
 	// State
 	let videoFile = $state<File | null>(null);
@@ -76,25 +77,129 @@
 		}
 	}
 
+	async function extractFrameAtTime(video: HTMLVideoElement, time: number, targetWidth: number): Promise<ImageData> {
+		return new Promise((resolve, reject) => {
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d')!;
+			
+			// Calculate dimensions maintaining aspect ratio
+			const aspectRatio = video.videoHeight / video.videoWidth;
+			const targetHeight = Math.round(targetWidth * aspectRatio);
+			
+			canvas.width = targetWidth;
+			canvas.height = targetHeight;
+			
+			const onSeeked = () => {
+				video.removeEventListener('seeked', onSeeked);
+				ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+				const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+				resolve(imageData);
+			};
+			
+			video.addEventListener('seeked', onSeeked);
+			video.currentTime = time;
+		});
+	}
+
 	async function handleConvert() {
-		if (!videoFile) return;
+		if (!videoFile || !videoElement) return;
 		
 		isProcessing = true;
 		progress = 0;
 		
-		// TODO: Implement actual conversion with WebCodecs + gifenc
-		// This is a placeholder that simulates the conversion
-		toast.info('Conversion starting...');
-		
-		for (let i = 0; i <= 100; i += 10) {
-			await new Promise(r => setTimeout(r, 200));
-			progress = i;
+		// Clean up previous result
+		if (resultUrl) {
+			URL.revokeObjectURL(resultUrl);
+			resultUrl = null;
 		}
 		
-		isProcessing = false;
-		toast.success('Conversion complete!');
+		toast.info('Extracting frames...');
 		
-		// TODO: Set resultUrl to the actual converted file
+		try {
+			// Pause video during processing
+			videoElement.pause();
+			isPlaying = false;
+			
+			// Calculate dimensions
+			const aspectRatio = videoElement.videoHeight / videoElement.videoWidth;
+			const targetHeight = Math.round(width * aspectRatio);
+			
+			// Calculate frame times
+			const clipDuration = endTime - startTime;
+			const frameDelay = 1000 / fps; // milliseconds per frame
+			const totalFrames = Math.floor(clipDuration * fps);
+			
+			if (outputFormat === 'gif') {
+				// Create GIF encoder
+				const gif = GIFEncoder();
+				
+				// Extract and encode frames
+				for (let i = 0; i < totalFrames; i++) {
+					const frameTime = startTime + (i / fps);
+					const imageData = await extractFrameAtTime(videoElement, frameTime, width);
+					
+					// Quantize based on quality (higher quality = more colors)
+					const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
+					const palette = quantize(imageData.data, maxColors);
+					const index = applyPalette(imageData.data, palette);
+					
+					gif.writeFrame(index, width, targetHeight, { 
+						palette, 
+						delay: Math.round(frameDelay)
+					});
+					
+					progress = Math.round(((i + 1) / totalFrames) * 100);
+				}
+				
+				gif.finish();
+				
+				// Create blob and URL
+				const bytes = gif.bytes();
+				const blob = new Blob([bytes], { type: 'image/gif' });
+				resultUrl = URL.createObjectURL(blob);
+				resultSize = blob.size;
+				
+			} else if (outputFormat === 'webp' || outputFormat === 'apng') {
+				// For WebP and APNG, we'll create an animated version using canvas frames
+				// This is a simplified approach - encode as GIF for now with a note
+				// Full WebP/APNG support would require additional libraries
+				
+				const gif = GIFEncoder();
+				
+				for (let i = 0; i < totalFrames; i++) {
+					const frameTime = startTime + (i / fps);
+					const imageData = await extractFrameAtTime(videoElement, frameTime, width);
+					
+					const maxColors = Math.max(16, Math.round(256 * (quality / 100)));
+					const palette = quantize(imageData.data, maxColors);
+					const index = applyPalette(imageData.data, palette);
+					
+					gif.writeFrame(index, width, targetHeight, { 
+						palette, 
+						delay: Math.round(frameDelay)
+					});
+					
+					progress = Math.round(((i + 1) / totalFrames) * 100);
+				}
+				
+				gif.finish();
+				
+				const bytes = gif.bytes();
+				const blob = new Blob([bytes], { type: 'image/gif' });
+				resultUrl = URL.createObjectURL(blob);
+				resultSize = blob.size;
+				
+				toast.info(`Note: Converted to GIF. Native ${outputFormat.toUpperCase()} encoding coming soon!`);
+			}
+			
+			toast.success('Conversion complete!');
+			
+		} catch (error) {
+			console.error('Conversion error:', error);
+			toast.error('Conversion failed. Please try again.');
+		} finally {
+			isProcessing = false;
+		}
 	}
 
 	function formatTime(seconds: number): string {
