@@ -49,6 +49,7 @@ One-click optimization for popular platforms:
 - Responsive design for all screen sizes
 - Copy to clipboard support
 - Drag-to-reorder images
+- URL input — paste a link to fetch files directly
 
 ### 📱 PWA Support
 - Installable as a desktop/mobile app
@@ -233,7 +234,7 @@ All three apps share the same philosophy:
 | Frame-by-Frame Editing | ❌ | ✅ | ❌ | ✅ |
 | APNG/WebP/AVIF Animation | ❌ | ✅ | ❌ | ❌ |
 | GIF Search/Library | ❌ | ❌ | ✅ | ❌ |
-| URL Input | ❌ | ✅ | ❌ | ✅ |
+| URL Input | ✅ | ✅ | ❌ | ✅ |
 | Templates | ❌ | ❌ | ✅ | ✅ |
 
 ### Where Swirl Shines
