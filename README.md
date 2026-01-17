@@ -199,6 +199,55 @@ All three apps share the same philosophy:
 - ✅ Open source
 - ✅ Free forever
 
+## 🌟 Why Swirl?
+
+| Feature | Swirl | EZGif | Giphy | Kapwing | Imgflip |
+|---------|-------|-------|-------|---------|---------|
+| 100% Client-side | ✅ | ❌ | ❌ | ❌ | ❌ |
+| No File Uploads | ✅ | ❌ | ❌ | ❌ | ❌ |
+| No Watermarks | ✅ | ✅ | ✅ | ❌ Free | ✅ |
+| Batch Processing | ✅ | Limited | ❌ | ✅ | ❌ |
+| ZIP Download | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Video to GIF | ✅ | ✅ | ✅ | ✅ | ✅ |
+| GIF from Images | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Optimize/Compress | ✅ | ✅ | ❌ | Limited | ❌ |
+| Visual Crop | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Speed Control | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Reverse/Boomerang | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Combine GIFs | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Split to Frames | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Platform Presets | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Copy to Clipboard | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Before/After Compare | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Offline Support | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Open Source | ✅ | ❌ | ❌ | ❌ | ❌ |
+| No Account Required | ✅ | ✅ | ❌ | ❌ | ✅ |
+| No Ads | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Upload Limit | None | ~100MB | Varies | 250MB | 35MB |
+
+### Key Advantages
+
+**🔒 Privacy First**
+- EZGif, Giphy, and others upload your files to their servers
+- Swirl processes everything locally — your GIFs never leave your device
+- No tracking, no analytics, no data collection
+
+**⚡ No Waiting**
+- No upload time, no server queue, no download wait
+- Processing starts immediately on your hardware
+- Works offline once loaded
+
+**🎯 Built for Workflows**
+- One-click presets for Discord, Slack, Twitter, WhatsApp
+- Batch process multiple files with ZIP download
+- Before/after comparison to verify quality
+- Copy directly to clipboard for instant sharing
+
+**🎨 Modern Experience**
+- Clean, distraction-free interface
+- Mobile-friendly with touch-optimized controls
+- Dark theme for comfortable extended use
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
