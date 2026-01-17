@@ -199,54 +199,64 @@ All three apps share the same philosophy:
 - ✅ Open source
 - ✅ Free forever
 
-## 🌟 Why Swirl?
+## 🌟 Swirl vs Competitors
 
-| Feature | Swirl | EZGif | Giphy | Kapwing | Imgflip |
-|---------|-------|-------|-------|---------|---------|
-| 100% Client-side | ✅ | ❌ | ❌ | ❌ | ❌ |
-| No File Uploads | ✅ | ❌ | ❌ | ❌ | ❌ |
-| No Watermarks | ✅ | ✅ | ✅ | ❌ Free | ✅ |
-| Batch Processing | ✅ | Limited | ❌ | ✅ | ❌ |
-| ZIP Download | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Video to GIF | ✅ | ✅ | ✅ | ✅ | ✅ |
-| GIF from Images | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Optimize/Compress | ✅ | ✅ | ❌ | Limited | ❌ |
-| Visual Crop | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Speed Control | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Reverse/Boomerang | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Combine GIFs | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Split to Frames | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Platform Presets | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Copy to Clipboard | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Before/After Compare | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Offline Support | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Open Source | ✅ | ❌ | ❌ | ❌ | ❌ |
-| No Account Required | ✅ | ✅ | ❌ | ❌ | ✅ |
-| No Ads | ✅ | ❌ | ✅ | ✅ | ❌ |
-| Upload Limit | None | ~100MB | Varies | 250MB | 35MB |
+| Feature | Swirl | EZGif | Giphy | Kapwing |
+|---------|:-----:|:-----:|:-----:|:-------:|
+| **Privacy & Access** |||||
+| 100% Client-side (no uploads) | ✅ | ❌ | ❌ | ❌ |
+| Works Offline | ✅ | ❌ | ❌ | ❌ |
+| No Account Required | ✅ | ✅ | ❌ | ❌ |
+| No Watermarks | ✅ | ✅ | ✅ | ❌ Free |
+| No Ads | ✅ | ❌ | ✅ | ✅ |
+| Open Source | ✅ | ❌ | ❌ | ❌ |
+| **Core Tools** |||||
+| Video to GIF | ✅ | ✅ | ✅ | ✅ |
+| GIF from Images | ✅ | ✅ | ✅ | ✅ |
+| Optimize/Compress | ✅ | ✅ | ❌ | Limited |
+| Resize | ✅ | ✅ | ❌ | ✅ |
+| Crop | ✅ | ✅ | ❌ | ✅ |
+| Speed Control | ✅ | ✅ | ❌ | ✅ |
+| Reverse/Boomerang | ✅ | ✅ | ❌ | ✅ |
+| Combine/Merge GIFs | ✅ | ✅ | ❌ | ✅ |
+| Split to Frames | ✅ | ✅ | ❌ | ❌ |
+| **Workflow Features** |||||
+| Batch Processing | ✅ | Limited | ❌ | ✅ |
+| ZIP Download | ✅ | ❌ | ❌ | ✅ |
+| Platform Presets (Discord, Slack) | ✅ | ❌ | ❌ | ❌ |
+| Copy to Clipboard | ✅ | ❌ | ❌ | ❌ |
+| Before/After Compare | ✅ | ❌ | ❌ | ❌ |
+| **Features We Don't Have (Yet)** |||||
+| Text/Caption Overlay | ❌ | ✅ | ✅ | ✅ |
+| Filters & Effects | ❌ | ✅ | ✅ | ✅ |
+| Rotate/Flip | ❌ | ✅ | ❌ | ✅ |
+| Frame-by-Frame Editing | ❌ | ✅ | ❌ | ✅ |
+| APNG/WebP/AVIF Animation | ❌ | ✅ | ❌ | ❌ |
+| GIF Search/Library | ❌ | ❌ | ✅ | ❌ |
+| URL Input | ❌ | ✅ | ❌ | ✅ |
+| Templates | ❌ | ❌ | ✅ | ✅ |
 
-### Key Advantages
+### Where Swirl Shines
 
-**🔒 Privacy First**
-- EZGif, Giphy, and others upload your files to their servers
-- Swirl processes everything locally — your GIFs never leave your device
-- No tracking, no analytics, no data collection
+**🔒 Privacy** — Your files never leave your device. EZGif, Giphy, and Kapwing all upload to their servers.
 
-**⚡ No Waiting**
-- No upload time, no server queue, no download wait
-- Processing starts immediately on your hardware
-- Works offline once loaded
+**⚡ Speed** — No upload/download wait. Processing starts instantly on your hardware.
 
-**🎯 Built for Workflows**
-- One-click presets for Discord, Slack, Twitter, WhatsApp
-- Batch process multiple files with ZIP download
-- Before/after comparison to verify quality
-- Copy directly to clipboard for instant sharing
+**🎯 Workflow** — Platform presets, batch ZIP downloads, clipboard copy, before/after compare.
 
-**🎨 Modern Experience**
-- Clean, distraction-free interface
-- Mobile-friendly with touch-optimized controls
-- Dark theme for comfortable extended use
+**💰 Truly Free** — No watermarks, no limits, no upsells. Forever.
+
+### Where Competitors Win
+
+**EZGif** — More features: text overlay, effects, rotate/flip, frame editing, animated WebP/APNG support. The most complete online GIF toolkit.
+
+**Giphy** — GIF discovery and search. Great for finding existing GIFs, not just making them.
+
+**Kapwing** — Full video editor with timeline, layers, text, and templates. Overkill for simple GIF tasks, but powerful for complex projects.
+
+### The Trade-off
+
+Swirl prioritizes **privacy and simplicity** over feature count. If you need text overlays or frame-by-frame editing, EZGif is excellent. If you want your files to stay on your device and just need the core GIF tools done well, that's what Swirl is for.
 
 ## 🤝 Contributing
 
