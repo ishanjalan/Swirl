@@ -1,6 +1,16 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 	<head>
+		<script>
+			(function () {
+				try {
+					var t =
+						localStorage.getItem('neutron-theme') ||
+						(window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+					document.documentElement.setAttribute('data-theme', t);
+				} catch (e) {}
+			})();
+		</script>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
@@ -43,6 +53,9 @@
 			/* Prevent FOUC */
 			html {
 				background: #09090b;
+			}
+			html[data-theme='light'] {
+				background: #fafafa;
 			}
 
 			/* Loader styles */
@@ -114,10 +127,10 @@
 			}
 		</style>
 
-		<link href="/Swirl/_app/immutable/entry/start.B8QeS2Zf.js" rel="modulepreload">
+		<link href="/Swirl/_app/immutable/entry/start.C6GqRtVj.js" rel="modulepreload">
 		<link href="/Swirl/_app/immutable/chunks/DY1TXoEC.js" rel="modulepreload">
-		<link href="/Swirl/_app/immutable/chunks/CRAPtUk9.js" rel="modulepreload">
-		<link href="/Swirl/_app/immutable/entry/app.vnsEeNCQ.js" rel="modulepreload">
+		<link href="/Swirl/_app/immutable/chunks/D5A6BHKT.js" rel="modulepreload">
+		<link href="/Swirl/_app/immutable/entry/app.CK8-C0go.js" rel="modulepreload">
 		<link href="/Swirl/_app/immutable/chunks/CsaauQz1.js" rel="modulepreload">
 		
 	</head>
@@ -150,7 +163,7 @@
 		<div style="display: contents">
 			<script>
 				{
-					__sveltekit_1ysdy7w = {
+					__sveltekit_1yx85dc = {
 						base: "/Swirl",
 						assets: "/Swirl"
 					};
@@ -158,8 +171,8 @@
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/Swirl/_app/immutable/entry/start.B8QeS2Zf.js"),
-						import("/Swirl/_app/immutable/entry/app.vnsEeNCQ.js")
+						import("/Swirl/_app/immutable/entry/start.C6GqRtVj.js"),
+						import("/Swirl/_app/immutable/entry/app.CK8-C0go.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
